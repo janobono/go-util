@@ -53,12 +53,11 @@ func (p *Pageable) TotalPages(totalElements int64) int32 {
 }
 
 type Page[T any] struct {
+	Pageable      *Pageable
 	TotalElements int64
 	TotalPages    int32
 	First         bool
 	Last          bool
-	Page          int32
-	Size          int32
 	Content       []T
 	Empty         bool
 }
@@ -67,12 +66,11 @@ func NewPage[T any](pageable *Pageable, totalElements int64, content []T) *Page[
 	totalPages := pageable.TotalPages(totalElements)
 
 	return &Page[T]{
+		Pageable:      pageable,
 		TotalElements: totalElements,
 		TotalPages:    totalPages,
 		First:         pageable.Page == 0,
 		Last:          pageable.Page == totalPages-1,
-		Page:          pageable.Page,
-		Size:          pageable.Size,
 		Content:       content,
 		Empty:         len(content) == 0,
 	}
