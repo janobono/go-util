@@ -23,11 +23,11 @@ type mockDecoder struct {
 	DecodeFunc func(string) (mockUser, error)
 }
 
-func (m mockDecoder) DecodeGrpcUserDetail(token string) (mockUser, error) {
+func (m mockDecoder) DecodeGrpcUserDetail(ctx context.Context, token string) (mockUser, error) {
 	return m.DecodeFunc(token)
 }
 
-func (m mockDecoder) GetGrpcUserAuthorities(user mockUser) []string {
+func (m mockDecoder) GetGrpcUserAuthorities(ctx context.Context, user mockUser) []string {
 	return user.Authorities
 }
 

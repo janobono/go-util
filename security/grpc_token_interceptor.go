@@ -16,8 +16,8 @@ var userDetailKey = contextKey{}
 const bearerPrefix = "Bearer "
 
 type UserDetailDecoder[T any] interface {
-	DecodeGrpcUserDetail(token string) (T, error)
-	GetGrpcUserAuthorities(userDetail T) []string
+	DecodeGrpcUserDetail(ctx context.Context, token string) (T, error)
+	GetGrpcUserAuthorities(ctx context.Context, userDetail T) []string
 }
 
 type GrpcTokenInterceptor[T any] struct {
@@ -49,12 +49,12 @@ func (g *GrpcTokenInterceptor[T]) InterceptToken(methods []GrpcSecuredMethod) gr
 			}
 
 			token := authHeader[0][len(bearerPrefix):]
-			userDetail, err := g.userDetailDecoder.DecodeGrpcUserDetail(token)
+			userDetail, err := g.userDetailDecoder.DecodeGrpcUserDetail(ctx, token)
 			if err != nil {
 				return nil, status.Errorf(codes.Unauthenticated, "invalid token")
 			}
 
-			userAuthorities := g.userDetailDecoder.GetGrpcUserAuthorities(userDetail)
+			userAuthorities := g.userDetailDecoder.GetGrpcUserAuthorities(ctx, userDetail)
 
 			if len(securedMethod.Authorities) > 0 && !HasAnyAuthority(securedMethod.Authorities, userAuthorities) {
 				return nil, status.Errorf(codes.PermissionDenied, "insufficient permissions")
