@@ -1,6 +1,7 @@
 package security
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
@@ -20,11 +21,11 @@ func TestJwt(t *testing.T) {
 
 	t.Logf("Generated Token: %s", token)
 
-	parsedToken, err := jwtToken.ParseToken(token)
+	parsedToken, err := jwtToken.ParseToken(context.Background(), token)
 	if err != nil {
 		t.Fatalf("Error parsing token: %s", err)
 	}
-	assert.Equal(t, (*parsedToken)["data"], "test data")
+	assert.Equal(t, "test data", (*parsedToken)["data"])
 }
 
 func TestJwtExpired(t *testing.T) {
@@ -39,9 +40,9 @@ func TestJwtExpired(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	_, err = jwtToken.ParseToken(token)
+	_, err = jwtToken.ParseToken(context.Background(), token)
 
-	assert.Error(t, err, "error parsing token: token has invalid claims: token is expired")
+	assert.ErrorContains(t, err, "token is expired")
 }
 
 func TestJwtSignature(t *testing.T) {
@@ -55,11 +56,12 @@ func TestJwtSignature(t *testing.T) {
 
 	t.Logf("Generated Token: %s", token)
 
-	_, err = jwtToken2.ParseToken(token)
+	_, err = jwtToken2.ParseToken(context.Background(), token)
 
-	assert.Error(t, err, "error parsing token: token signature is invalid: crypto/rsa: verification error")
+	assert.ErrorContains(t, err, "verification error")
 }
 
+// initJwtToken creates a JwtToken instance for testing
 func initJwtToken(t *testing.T, expiration int64) *JwtToken {
 	algorithm := jwt.SigningMethodRS256
 	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -75,9 +77,9 @@ func initJwtToken(t *testing.T, expiration int64) *JwtToken {
 		"kid",
 		"test",
 		time.Duration(expiration)*time.Second,
-		time.Now(),
-		func(kid string) (interface{}, error) {
-			return nil, fmt.Errorf("not implemented")
+		time.Now().Add(1*time.Hour),
+		func(ctx context.Context, kid string) (interface{}, error) {
+			return nil, fmt.Errorf("not implemented") // not used because the same key is embedded
 		},
 	)
 

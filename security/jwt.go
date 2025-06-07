@@ -1,6 +1,7 @@
 package security
 
 import (
+	"context"
 	"crypto/rsa"
 	"errors"
 	"fmt"
@@ -8,7 +9,7 @@ import (
 	"time"
 )
 
-type GetPublicKey func(kid string) (interface{}, error)
+type GetPublicKey func(ctx context.Context, kid string) (interface{}, error)
 
 type JwtToken struct {
 	algorithm       *jwt.SigningMethodRSA
@@ -78,8 +79,12 @@ func (t *JwtToken) GenerateToken(claims jwt.MapClaims) (string, error) {
 	return signedToken, nil
 }
 
-func (t *JwtToken) ParseToken(tokenString string) (*jwt.MapClaims, error) {
-	token, err := jwt.Parse(tokenString, t.getKeyFunc)
+func (t *JwtToken) ParseToken(ctx context.Context, tokenString string) (*jwt.MapClaims, error) {
+	keyFunc := func(token *jwt.Token) (interface{}, error) {
+		return t.getKeyFunc(ctx, token)
+	}
+
+	token, err := jwt.Parse(tokenString, keyFunc)
 	if err != nil {
 		return nil, fmt.Errorf("error parsing token: %w", err)
 	}
@@ -101,7 +106,7 @@ func (t *JwtToken) ParseToken(tokenString string) (*jwt.MapClaims, error) {
 	return &claims, nil
 }
 
-func (t *JwtToken) getKeyFunc(token *jwt.Token) (interface{}, error) {
+func (t *JwtToken) getKeyFunc(ctx context.Context, token *jwt.Token) (interface{}, error) {
 	kid, ok := token.Header["kid"].(string)
 
 	if !ok {
@@ -109,7 +114,7 @@ func (t *JwtToken) getKeyFunc(token *jwt.Token) (interface{}, error) {
 	}
 
 	if kid != t.kid {
-		return t.getPublicKey(kid)
+		return t.getPublicKey(ctx, kid)
 	}
 
 	return t.publicKey, nil
