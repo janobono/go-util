@@ -1,7 +1,6 @@
 package security
 
 import (
-	"regexp"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -20,8 +19,8 @@ type HttpTokenMiddleware interface {
 }
 
 type HttpSecurityConfig struct {
-	PermitAllRequest *regexp.Regexp
-	Authorities      map[string][]string
+	PublicEndpoints map[string]struct{}
+	Authorities     map[string][]string
 }
 
 type httpTokenMiddleware[T any] struct {
@@ -39,8 +38,10 @@ func NewHttpTokenMiddleware[T any](config HttpSecurityConfig, httpHandlers HttpH
 func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
+		method := c.Request.Method
+		key := method + ":" + path
 
-		if h.config.PermitAllRequest != nil && h.config.PermitAllRequest.MatchString(path) {
+		if isPublic(path, method, h.config.PublicEndpoints) {
 			c.Next()
 			return
 		}
@@ -58,7 +59,7 @@ func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
 			return
 		}
 
-		allowedRoles, exists := h.config.Authorities[path]
+		allowedRoles, exists := h.config.Authorities[key]
 		if !exists || len(allowedRoles) == 0 {
 			c.Set("userDetail", userDetail)
 			c.Next()
@@ -89,4 +90,26 @@ func GetHttpUserDetail[T any](c *gin.Context) (T, bool) {
 	}
 	typedValue, ok := value.(T)
 	return typedValue, ok
+}
+
+func isPublic(path, method string, public map[string]struct{}) bool {
+	// Exact match
+	full := method + ":" + path
+	if _, ok := public[full]; ok {
+		return true
+	}
+	if _, ok := public["ANY:"+path]; ok {
+		return true
+	}
+
+	// Wildcard match
+	for route := range public {
+		if (strings.HasSuffix(route, "/*") && strings.HasPrefix(full, strings.TrimSuffix(route, "*"))) ||
+			(strings.HasPrefix(route, "ANY:") && strings.HasSuffix(route, "/*") &&
+				strings.HasPrefix("ANY:"+path, strings.TrimSuffix(route, "*"))) {
+			return true
+		}
+	}
+
+	return false
 }
