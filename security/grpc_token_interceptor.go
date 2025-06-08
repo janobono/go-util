@@ -13,8 +13,6 @@ type contextKey struct{}
 
 var userDetailKey = contextKey{}
 
-const bearerPrefix = "Bearer "
-
 type UserDetailDecoder[T any] interface {
 	DecodeGrpcUserDetail(ctx context.Context, token string) (T, error)
 	GetGrpcUserAuthorities(ctx context.Context, userDetail T) []string

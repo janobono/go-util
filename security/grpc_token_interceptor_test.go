@@ -14,20 +14,20 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-type mockUser struct {
+type mockGrpcUser struct {
 	ID          string
 	Authorities []string
 }
 
 type mockDecoder struct {
-	DecodeFunc func(string) (mockUser, error)
+	DecodeFunc func(string) (mockGrpcUser, error)
 }
 
-func (m mockDecoder) DecodeGrpcUserDetail(ctx context.Context, token string) (mockUser, error) {
+func (m mockDecoder) DecodeGrpcUserDetail(ctx context.Context, token string) (mockGrpcUser, error) {
 	return m.DecodeFunc(token)
 }
 
-func (m mockDecoder) GetGrpcUserAuthorities(ctx context.Context, user mockUser) []string {
+func (m mockDecoder) GetGrpcUserAuthorities(ctx context.Context, user mockGrpcUser) []string {
 	return user.Authorities
 }
 
@@ -37,11 +37,11 @@ func fakeHandler(ctx context.Context, req interface{}) (interface{}, error) {
 
 func TestInterceptor_ValidToken(t *testing.T) {
 	decoder := mockDecoder{
-		DecodeFunc: func(token string) (mockUser, error) {
-			return mockUser{ID: "123", Authorities: []string{"ADMIN"}}, nil
+		DecodeFunc: func(token string) (mockGrpcUser, error) {
+			return mockGrpcUser{ID: "123", Authorities: []string{"ADMIN"}}, nil
 		},
 	}
-	interceptor := NewGrpcTokenInterceptor[mockUser](decoder)
+	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
 
 	methods := []GrpcSecuredMethod{
 		{Method: "/test.Service/Test", Authorities: []string{"ADMIN"}},
@@ -59,7 +59,7 @@ func TestInterceptor_ValidToken(t *testing.T) {
 
 func TestInterceptor_MissingMetadata(t *testing.T) {
 	decoder := mockDecoder{}
-	interceptor := NewGrpcTokenInterceptor[mockUser](decoder)
+	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
 
 	methods := []GrpcSecuredMethod{{Method: "/test.Service/Test", Authorities: nil}}
 
@@ -71,7 +71,7 @@ func TestInterceptor_MissingMetadata(t *testing.T) {
 
 func TestInterceptor_MissingToken(t *testing.T) {
 	decoder := mockDecoder{}
-	interceptor := NewGrpcTokenInterceptor[mockUser](decoder)
+	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
 
 	md := metadata.New(nil)
 	ctx := metadata.NewIncomingContext(context.Background(), md)
@@ -85,11 +85,11 @@ func TestInterceptor_MissingToken(t *testing.T) {
 
 func TestInterceptor_InvalidToken(t *testing.T) {
 	decoder := mockDecoder{
-		DecodeFunc: func(token string) (mockUser, error) {
-			return mockUser{}, errors.New("invalid")
+		DecodeFunc: func(token string) (mockGrpcUser, error) {
+			return mockGrpcUser{}, errors.New("invalid")
 		},
 	}
-	interceptor := NewGrpcTokenInterceptor[mockUser](decoder)
+	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
 
 	md := metadata.New(map[string]string{"authorization": "Bearer badtoken"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
@@ -103,11 +103,11 @@ func TestInterceptor_InvalidToken(t *testing.T) {
 
 func TestInterceptor_InsufficientAuthorities(t *testing.T) {
 	decoder := mockDecoder{
-		DecodeFunc: func(token string) (mockUser, error) {
-			return mockUser{ID: "x", Authorities: []string{"USER"}}, nil
+		DecodeFunc: func(token string) (mockGrpcUser, error) {
+			return mockGrpcUser{ID: "x", Authorities: []string{"USER"}}, nil
 		},
 	}
-	interceptor := NewGrpcTokenInterceptor[mockUser](decoder)
+	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
 
 	md := metadata.New(map[string]string{"authorization": "Bearer token"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
@@ -123,7 +123,7 @@ func TestInterceptor_InsufficientAuthorities(t *testing.T) {
 
 func TestInterceptor_NoSecuredMethod(t *testing.T) {
 	decoder := mockDecoder{}
-	interceptor := NewGrpcTokenInterceptor[mockUser](decoder)
+	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
 
 	info := &grpc.UnaryServerInfo{FullMethod: "/unprotected.Method"}
 	resp, err := interceptor.InterceptToken(nil)(context.Background(), nil, info, fakeHandler)
@@ -132,11 +132,11 @@ func TestInterceptor_NoSecuredMethod(t *testing.T) {
 }
 
 func TestGetGrpcUserDetail_Found(t *testing.T) {
-	expected := mockUser{ID: "Alice"}
+	expected := mockGrpcUser{ID: "Alice"}
 
 	ctx := context.WithValue(context.Background(), userDetailKey, expected)
 
-	actual, ok := GetGrpcUserDetail[mockUser](ctx)
+	actual, ok := GetGrpcUserDetail[mockGrpcUser](ctx)
 	assert.True(t, ok)
 	assert.Equal(t, expected, actual)
 }
@@ -144,15 +144,15 @@ func TestGetGrpcUserDetail_Found(t *testing.T) {
 func TestGetGrpcUserDetail_NotFound(t *testing.T) {
 	ctx := context.Background()
 
-	actual, ok := GetGrpcUserDetail[mockUser](ctx)
+	actual, ok := GetGrpcUserDetail[mockGrpcUser](ctx)
 	assert.False(t, ok)
-	assert.Equal(t, mockUser{}, actual)
+	assert.Equal(t, mockGrpcUser{}, actual)
 }
 
 func TestGetGrpcUserDetail_WrongType(t *testing.T) {
 	ctx := context.WithValue(context.Background(), userDetailKey, "not a user")
 
-	actual, ok := GetGrpcUserDetail[mockUser](ctx)
+	actual, ok := GetGrpcUserDetail[mockGrpcUser](ctx)
 	assert.False(t, ok)
-	assert.Equal(t, mockUser{}, actual)
+	assert.Equal(t, mockGrpcUser{}, actual)
 }

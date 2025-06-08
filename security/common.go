@@ -1,23 +1,22 @@
 package security
 
+const bearerPrefix = "Bearer "
+
 type GrpcSecuredMethod struct {
 	Method      string
 	Authorities []string
 }
 
-func HasAnyAuthority(methodAuthorities, userAuthorities []string) bool {
-	set := make(map[string]bool)
-
-	for _, item := range methodAuthorities {
-		set[item] = true
+func HasAnyAuthority(required, user []string) bool {
+	userSet := make(map[string]struct{}, len(user))
+	for _, role := range user {
+		userSet[role] = struct{}{}
 	}
-
-	for _, item := range userAuthorities {
-		if _, found := set[item]; found {
+	for _, requiredRole := range required {
+		if _, ok := userSet[requiredRole]; ok {
 			return true
 		}
 	}
-
 	return false
 }
 
