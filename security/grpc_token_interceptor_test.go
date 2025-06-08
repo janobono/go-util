@@ -27,8 +27,8 @@ func (m mockDecoder) DecodeGrpcUserDetail(ctx context.Context, token string) (mo
 	return m.DecodeFunc(token)
 }
 
-func (m mockDecoder) GetGrpcUserAuthorities(ctx context.Context, user mockGrpcUser) []string {
-	return user.Authorities
+func (m mockDecoder) GetGrpcUserAuthorities(ctx context.Context, user mockGrpcUser) ([]string, error) {
+	return user.Authorities, nil
 }
 
 func fakeHandler(ctx context.Context, req interface{}) (interface{}, error) {
