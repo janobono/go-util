@@ -5,6 +5,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 )
 
 func EnvSafe(key string) (string, error) {
@@ -60,4 +61,12 @@ func EnvBool(key string) bool {
 		log.Fatal(err)
 	}
 	return b
+}
+
+func EnvSlice(key string) []string {
+	s, err := EnvSafe(key)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return strings.Split(s, ",")
 }
