@@ -37,10 +37,13 @@ func NewHttpTokenMiddleware[T any](config HttpSecurityConfig, httpHandlers HttpH
 
 func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		path := c.Request.URL.Path
+		fullPath := c.FullPath()
+		if fullPath == "" {
+			fullPath = c.Request.URL.Path // fallback for unmatched routes
+		}
 		method := c.Request.Method
 
-		if isPublic(path, method, h.config.PublicEndpoints) {
+		if isPublic(fullPath, method, h.config.PublicEndpoints) {
 			c.Next()
 			return
 		}
@@ -58,7 +61,7 @@ func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
 			return
 		}
 
-		allowedRoles, exists := matchAuthorities(path, method, h.config.Authorities)
+		allowedRoles, exists := matchAuthorities(fullPath, method, h.config.Authorities)
 		if !exists || len(allowedRoles) == 0 {
 			c.Set("userDetail", userDetail)
 			c.Next()
@@ -81,18 +84,7 @@ func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
 	}
 }
 
-func GetHttpUserDetail[T any](c *gin.Context) (T, bool) {
-	value, exists := c.Get("userDetail")
-	if !exists {
-		var zero T
-		return zero, false
-	}
-	typedValue, ok := value.(T)
-	return typedValue, ok
-}
-
 func isPublic(path, method string, public map[string]struct{}) bool {
-	// Exact match
 	full := method + ":" + path
 	if _, ok := public[full]; ok {
 		return true
@@ -101,7 +93,6 @@ func isPublic(path, method string, public map[string]struct{}) bool {
 		return true
 	}
 
-	// Wildcard match
 	for route := range public {
 		if (strings.HasSuffix(route, "/*") && strings.HasPrefix(full, strings.TrimSuffix(route, "*"))) ||
 			(strings.HasPrefix(route, "ANY:") && strings.HasSuffix(route, "/*") &&

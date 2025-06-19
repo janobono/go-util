@@ -56,6 +56,7 @@ func TestHttpTokenMiddleware(t *testing.T) {
 		"GET:/admin":         {"ADMIN"},
 		"GET:/wildsecure/*":  {"USER"},
 		"ANY:/common/secure": {"USER"},
+		"GET:/users/:id":     {"USER"}, // path param route
 	}
 
 	config := HttpSecurityConfig{
@@ -84,6 +85,12 @@ func TestHttpTokenMiddleware(t *testing.T) {
 		{"Admin with user token - forbidden", "GET", "/admin", "Bearer valid-token", http.StatusForbidden, `{"error":"forbidden"}`},
 		{"Wildcard authority match with USER token", "GET", "/wildsecure/resource", "Bearer valid-token", http.StatusOK, `{"message":"wildsecure"}`},
 		{"ANY method authority match - POST", "POST", "/common/secure", "Bearer valid-token", http.StatusOK, `{"message":"common"}`},
+
+		// New tests for path param
+		{"Path param - valid user token", "GET", "/users/123", "Bearer valid-token", http.StatusOK, `"message":"user with id"`},
+		{"Path param - missing token", "GET", "/users/123", "", http.StatusUnauthorized, `"error":"missing auth header"`},
+		{"Path param - invalid token", "GET", "/users/123", "Bearer bad-token", http.StatusUnauthorized, `"error":"unauthorized"`},
+		{"Path param - insufficient role", "GET", "/users/123", "Bearer admin-token", http.StatusForbidden, `"error":"forbidden"`},
 	}
 
 	for _, tt := range tests {
@@ -131,6 +138,9 @@ func setupRouter(config HttpSecurityConfig) *gin.Engine {
 	})
 	router.POST("/common/secure", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "common"})
+	})
+	router.GET("/users/:id", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "user with id", "id": c.Param("id")})
 	})
 
 	return router
