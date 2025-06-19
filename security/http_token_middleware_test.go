@@ -52,8 +52,10 @@ func TestHttpTokenMiddleware(t *testing.T) {
 	}
 
 	authorities := map[string][]string{
-		"GET:/secure": {"USER"},
-		"GET:/admin":  {"ADMIN"},
+		"GET:/secure":        {"USER"},
+		"GET:/admin":         {"ADMIN"},
+		"GET:/wildsecure/*":  {"USER"},
+		"ANY:/common/secure": {"USER"},
 	}
 
 	config := HttpSecurityConfig{
@@ -71,73 +73,17 @@ func TestHttpTokenMiddleware(t *testing.T) {
 		expectedStatus int
 		expectedBody   string
 	}{
-		{
-			name:           "Public endpoint",
-			method:         "GET",
-			url:            "/public",
-			expectedStatus: http.StatusOK,
-			expectedBody:   `{"message":"public"}`,
-		},
-		{
-			name:           "Any method public endpoint",
-			method:         "POST",
-			url:            "/anypublic",
-			expectedStatus: http.StatusOK,
-			expectedBody:   `{"message":"anypublic"}`,
-		},
-		{
-			name:           "Wildcard public endpoint",
-			method:         "GET",
-			url:            "/wildcard/something",
-			expectedStatus: http.StatusOK,
-			expectedBody:   `{"message":"wildcard"}`,
-		},
-		{
-			name:           "ANY wildcard public endpoint",
-			method:         "GET",
-			url:            "/anywildcard/match",
-			expectedStatus: http.StatusOK,
-			expectedBody:   `{"message":"anywildcard"}`,
-		},
-		{
-			name:           "Secure with valid USER token",
-			method:         "GET",
-			url:            "/secure",
-			authHeader:     "Bearer valid-token",
-			expectedStatus: http.StatusOK,
-			expectedBody:   `{"message":"secure"}`,
-		},
-		{
-			name:           "Secure with missing token",
-			method:         "GET",
-			url:            "/secure",
-			expectedStatus: http.StatusUnauthorized,
-			expectedBody:   `{"error":"missing auth header"}`,
-		},
-		{
-			name:           "Secure with invalid token",
-			method:         "GET",
-			url:            "/secure",
-			authHeader:     "Bearer bad-token",
-			expectedStatus: http.StatusUnauthorized,
-			expectedBody:   `{"error":"unauthorized"}`,
-		},
-		{
-			name:           "Admin with valid admin token",
-			method:         "GET",
-			url:            "/admin",
-			authHeader:     "Bearer admin-token",
-			expectedStatus: http.StatusOK,
-			expectedBody:   `{"message":"admin"}`,
-		},
-		{
-			name:           "Admin with user token - forbidden",
-			method:         "GET",
-			url:            "/admin",
-			authHeader:     "Bearer valid-token",
-			expectedStatus: http.StatusForbidden,
-			expectedBody:   `{"error":"forbidden"}`,
-		},
+		{"Public endpoint", "GET", "/public", "", http.StatusOK, `{"message":"public"}`},
+		{"Any method public endpoint", "POST", "/anypublic", "", http.StatusOK, `{"message":"anypublic"}`},
+		{"Wildcard public endpoint", "GET", "/wildcard/something", "", http.StatusOK, `{"message":"wildcard"}`},
+		{"ANY wildcard public endpoint", "GET", "/anywildcard/match", "", http.StatusOK, `{"message":"anywildcard"}`},
+		{"Secure with valid USER token", "GET", "/secure", "Bearer valid-token", http.StatusOK, `{"message":"secure"}`},
+		{"Secure with missing token", "GET", "/secure", "", http.StatusUnauthorized, `{"error":"missing auth header"}`},
+		{"Secure with invalid token", "GET", "/secure", "Bearer bad-token", http.StatusUnauthorized, `{"error":"unauthorized"}`},
+		{"Admin with valid admin token", "GET", "/admin", "Bearer admin-token", http.StatusOK, `{"message":"admin"}`},
+		{"Admin with user token - forbidden", "GET", "/admin", "Bearer valid-token", http.StatusForbidden, `{"error":"forbidden"}`},
+		{"Wildcard authority match with USER token", "GET", "/wildsecure/resource", "Bearer valid-token", http.StatusOK, `{"message":"wildsecure"}`},
+		{"ANY method authority match - POST", "POST", "/common/secure", "Bearer valid-token", http.StatusOK, `{"message":"common"}`},
 	}
 
 	for _, tt := range tests {
@@ -180,5 +126,12 @@ func setupRouter(config HttpSecurityConfig) *gin.Engine {
 	router.GET("/admin", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"message": "admin"})
 	})
+	router.GET("/wildsecure/*any", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "wildsecure"})
+	})
+	router.POST("/common/secure", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"message": "common"})
+	})
+
 	return router
 }

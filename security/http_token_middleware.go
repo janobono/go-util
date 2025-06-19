@@ -39,7 +39,6 @@ func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		path := c.Request.URL.Path
 		method := c.Request.Method
-		key := method + ":" + path
 
 		if isPublic(path, method, h.config.PublicEndpoints) {
 			c.Next()
@@ -59,7 +58,7 @@ func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
 			return
 		}
 
-		allowedRoles, exists := h.config.Authorities[key]
+		allowedRoles, exists := matchAuthorities(path, method, h.config.Authorities)
 		if !exists || len(allowedRoles) == 0 {
 			c.Set("userDetail", userDetail)
 			c.Next()
@@ -112,4 +111,25 @@ func isPublic(path, method string, public map[string]struct{}) bool {
 	}
 
 	return false
+}
+
+func matchAuthorities(path, method string, authorities map[string][]string) ([]string, bool) {
+	key := method + ":" + path
+
+	if roles, ok := authorities[key]; ok {
+		return roles, true
+	}
+	if roles, ok := authorities["ANY:"+path]; ok {
+		return roles, true
+	}
+
+	for routeKey, roles := range authorities {
+		if (strings.HasSuffix(routeKey, "/*") && strings.HasPrefix(key, strings.TrimSuffix(routeKey, "*"))) ||
+			(strings.HasPrefix(routeKey, "ANY:") && strings.HasSuffix(routeKey, "/*") &&
+				strings.HasPrefix("ANY:"+path, strings.TrimSuffix(routeKey, "*"))) {
+			return roles, true
+		}
+	}
+
+	return nil, false
 }
