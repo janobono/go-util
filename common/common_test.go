@@ -112,3 +112,25 @@ func TestDeduplicate(t *testing.T) {
 		})
 	}
 }
+
+func TestIsValidEmail(t *testing.T) {
+	type testCase struct {
+		value    string
+		expected bool
+	}
+
+	t.Run("IsValidEmail", func(t *testing.T) {
+		tests := []testCase{
+			{value: "", expected: false},
+			{value: "  ", expected: false},
+			{value: "anything", expected: false},
+			{value: "anything@domain", expected: false},
+			{value: "anything@domain.sk", expected: true},
+		}
+
+		for _, test := range tests {
+			actual := IsValidEmail(test.value)
+			assert.Equal(t, actual, test.expected)
+		}
+	})
+}

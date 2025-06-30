@@ -1,6 +1,9 @@
 package common
 
-import "strings"
+import (
+	"regexp"
+	"strings"
+)
 
 func IsBlank(value string) bool {
 	return strings.TrimSpace(value) == ""
@@ -43,4 +46,9 @@ func Deduplicate(values []string) []string {
 	}
 
 	return result
+}
+
+func IsValidEmail(email string) bool {
+	re := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+	return re.MatchString(email)
 }
