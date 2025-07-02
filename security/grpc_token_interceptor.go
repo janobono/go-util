@@ -9,9 +9,13 @@ import (
 	"strings"
 )
 
-type contextKey struct{}
+type grpcContextKey string
 
-var userDetailKey = contextKey{}
+const (
+	grpcBearerPrefix                  = "Bearer "
+	grpcAccessTokenKey grpcContextKey = "accessToken"
+	grpcUserDetailKey  grpcContextKey = "userDetail"
+)
 
 type UserDetailDecoder[T any] interface {
 	DecodeGrpcUserDetail(ctx context.Context, token string) (T, error)
@@ -42,11 +46,14 @@ func (g *GrpcTokenInterceptor[T]) InterceptToken(methods []GrpcSecuredMethod) gr
 			}
 
 			authHeader := md.Get("authorization")
-			if len(authHeader) == 0 || !strings.HasPrefix(authHeader[0], bearerPrefix) {
+			if len(authHeader) == 0 {
+				authHeader = md.Get("Authorization")
+			}
+			if len(authHeader) == 0 || !strings.HasPrefix(authHeader[0], grpcBearerPrefix) {
 				return nil, status.Errorf(codes.Unauthenticated, "missing or invalid Bearer token")
 			}
 
-			token := authHeader[0][len(bearerPrefix):]
+			token := authHeader[0][len(grpcBearerPrefix):]
 			userDetail, err := g.userDetailDecoder.DecodeGrpcUserDetail(ctx, token)
 			if err != nil {
 				return nil, status.Errorf(codes.Unauthenticated, "%s", err.Error())
@@ -61,15 +68,25 @@ func (g *GrpcTokenInterceptor[T]) InterceptToken(methods []GrpcSecuredMethod) gr
 				return nil, status.Errorf(codes.PermissionDenied, "insufficient permissions")
 			}
 
-			ctx = context.WithValue(ctx, userDetailKey, userDetail)
+			ctx = context.WithValue(ctx, grpcAccessTokenKey, token)
+			ctx = context.WithValue(ctx, grpcUserDetailKey, userDetail)
 		}
 
 		return handler(ctx, req)
 	}
 }
 
+func GetGrpcAccessToken(ctx context.Context) (string, bool) {
+	value := ctx.Value(grpcAccessTokenKey)
+	if value == nil {
+		return "", false
+	}
+	typedValue, ok := value.(string)
+	return typedValue, ok
+}
+
 func GetGrpcUserDetail[T any](ctx context.Context) (T, bool) {
-	value := ctx.Value(userDetailKey)
+	value := ctx.Value(grpcUserDetailKey)
 	if value == nil {
 		var zero T
 		return zero, false

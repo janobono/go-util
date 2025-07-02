@@ -6,6 +6,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const (
+	httpBearerPrefix   = "Bearer "
+	httpAccessTokenKey = "accessToken"
+	httpUserDetailKey  = "userDetail"
+)
+
 type HttpHandlers[T any] interface {
 	MissingAuthorizationHeader(c *gin.Context)
 	Unauthorized(c *gin.Context)
@@ -36,52 +42,73 @@ func NewHttpTokenMiddleware[T any](config HttpSecurityConfig, httpHandlers HttpH
 }
 
 func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		fullPath := c.FullPath()
+	return func(ctx *gin.Context) {
+		fullPath := ctx.FullPath()
 		if fullPath == "" {
-			fullPath = c.Request.URL.Path // fallback for unmatched routes
+			fullPath = ctx.Request.URL.Path // fallback for unmatched routes
 		}
-		method := c.Request.Method
+		method := ctx.Request.Method
 
 		if isPublic(fullPath, method, h.config.PublicEndpoints) {
-			c.Next()
+			ctx.Next()
 			return
 		}
 
-		authHeader := c.GetHeader("Authorization")
-		if !strings.HasPrefix(authHeader, bearerPrefix) {
-			h.httpHandlers.MissingAuthorizationHeader(c)
+		authHeader := ctx.GetHeader("Authorization")
+		if !strings.HasPrefix(authHeader, httpBearerPrefix) {
+			h.httpHandlers.MissingAuthorizationHeader(ctx)
 			return
 		}
-		token := strings.TrimPrefix(authHeader, bearerPrefix)
+		token := strings.TrimPrefix(authHeader, httpBearerPrefix)
 
-		userDetail, err := h.httpHandlers.DecodeUserDetail(c, token)
+		userDetail, err := h.httpHandlers.DecodeUserDetail(ctx, token)
 		if err != nil {
-			h.httpHandlers.Unauthorized(c)
+			h.httpHandlers.Unauthorized(ctx)
 			return
 		}
 
 		allowedRoles, exists := matchAuthorities(fullPath, method, h.config.Authorities)
 		if !exists || len(allowedRoles) == 0 {
-			c.Set("userDetail", userDetail)
-			c.Next()
+			ctx.Set(httpAccessTokenKey, token)
+			ctx.Set(httpUserDetailKey, userDetail)
+			ctx.Next()
 			return
 		}
 
-		userAuthorities, err := h.httpHandlers.GetUserAuthorities(c, userDetail)
+		userAuthorities, err := h.httpHandlers.GetUserAuthorities(ctx, userDetail)
 		if err != nil {
-			h.httpHandlers.PermissionDenied(c)
+			h.httpHandlers.PermissionDenied(ctx)
 			return
 		}
 
 		if !HasAnyAuthority(allowedRoles, userAuthorities) {
-			h.httpHandlers.PermissionDenied(c)
+			h.httpHandlers.PermissionDenied(ctx)
 			return
 		}
 
-		c.Set("userDetail", userDetail)
-		c.Next()
+		ctx.Set(httpAccessTokenKey, token)
+		ctx.Set(httpUserDetailKey, userDetail)
+		ctx.Next()
 	}
+}
+
+func GetHttpAccessToken(ctx *gin.Context) (string, bool) {
+	value, exists := ctx.Get(httpAccessTokenKey)
+	if !exists {
+		return "", false
+	}
+	token, ok := value.(string)
+	return token, ok
+}
+
+func GetHttpUserDetail[T any](ctx *gin.Context) (T, bool) {
+	value, exists := ctx.Get(httpUserDetailKey)
+	if !exists {
+		var zero T
+		return zero, false
+	}
+	typed, ok := value.(T)
+	return typed, ok
 }
 
 func isPublic(path, method string, public map[string]struct{}) bool {

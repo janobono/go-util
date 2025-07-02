@@ -134,7 +134,7 @@ func TestInterceptor_NoSecuredMethod(t *testing.T) {
 func TestGetGrpcUserDetail_Found(t *testing.T) {
 	expected := mockGrpcUser{ID: "Alice"}
 
-	ctx := context.WithValue(context.Background(), userDetailKey, expected)
+	ctx := context.WithValue(context.Background(), grpcUserDetailKey, expected)
 
 	actual, ok := GetGrpcUserDetail[mockGrpcUser](ctx)
 	assert.True(t, ok)
@@ -150,9 +150,26 @@ func TestGetGrpcUserDetail_NotFound(t *testing.T) {
 }
 
 func TestGetGrpcUserDetail_WrongType(t *testing.T) {
-	ctx := context.WithValue(context.Background(), userDetailKey, "not a user")
+	ctx := context.WithValue(context.Background(), grpcUserDetailKey, "not a user")
 
 	actual, ok := GetGrpcUserDetail[mockGrpcUser](ctx)
 	assert.False(t, ok)
 	assert.Equal(t, mockGrpcUser{}, actual)
+}
+
+func TestGetGrpcAccessToken_Found(t *testing.T) {
+	expected := "some-token"
+	ctx := context.WithValue(context.Background(), grpcAccessTokenKey, expected)
+
+	actual, ok := GetGrpcAccessToken(ctx)
+	assert.True(t, ok)
+	assert.Equal(t, expected, actual)
+}
+
+func TestGetGrpcAccessToken_NotFound(t *testing.T) {
+	ctx := context.Background()
+
+	actual, ok := GetGrpcAccessToken(ctx)
+	assert.False(t, ok)
+	assert.Equal(t, "", actual)
 }

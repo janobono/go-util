@@ -1,7 +1,5 @@
 package security
 
-const bearerPrefix = "Bearer "
-
 type GrpcSecuredMethod struct {
 	Method      string
 	Authorities []string
