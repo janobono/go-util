@@ -6,12 +6,13 @@ import (
 )
 
 type ServiceError struct {
+	Status  int
 	Code    string
 	Message string
 }
 
 func (e *ServiceError) Error() string {
-	return fmt.Sprintf("[%s] %s", e.Code, e.Message)
+	return fmt.Sprintf("(%d)[%s] %s", e.Status, e.Code, e.Message)
 }
 
 func IsCode(err error, code string) bool {
@@ -22,6 +23,6 @@ func IsCode(err error, code string) bool {
 	return false
 }
 
-func NewServiceError(code string, message string) *ServiceError {
-	return &ServiceError{Code: code, Message: message}
+func NewServiceError(status int, code string, message string) *ServiceError {
+	return &ServiceError{Status: status, Code: code, Message: message}
 }
