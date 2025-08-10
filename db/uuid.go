@@ -1,9 +1,10 @@
 package db
 
 import (
+	"log"
+
 	"github.com/jackc/pgx/v5/pgtype"
 	"github.com/samborkent/uuidv7"
-	"log"
 )
 
 func NewUUID() pgtype.UUID {

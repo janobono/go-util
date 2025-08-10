@@ -2,8 +2,9 @@ package security
 
 import (
 	"fmt"
-	"golang.org/x/crypto/bcrypt"
 	"log/slog"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 type PasswordEncoder struct {

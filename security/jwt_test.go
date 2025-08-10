@@ -5,10 +5,11 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"fmt"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/stretchr/testify/assert"
 	"testing"
 	"time"
+
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestJwt(t *testing.T) {

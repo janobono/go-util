@@ -2,11 +2,12 @@ package security
 
 import (
 	"context"
+	"strings"
+
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
-	"strings"
 )
 
 type grpcContextKey string

@@ -2,9 +2,10 @@ package db
 
 import (
 	"fmt"
-	"github.com/jackc/pgx/v5/pgtype"
 	"log"
 	"time"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func NowUTC() pgtype.Timestamptz {

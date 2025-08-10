@@ -1,8 +1,9 @@
 package common
 
 import (
-	"golang.org/x/text/unicode/norm"
 	"strings"
+
+	"golang.org/x/text/unicode/norm"
 )
 
 func ToDf(text string) string {
