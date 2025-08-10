@@ -70,3 +70,25 @@ func EnvSlice(key string) []string {
 	}
 	return strings.Split(s, ",")
 }
+
+func EnvMap(key string) map[string]string {
+	s, err := EnvSafe(key)
+	if err != nil {
+		log.Fatal(err)
+	}
+	out := make(map[string]string)
+	for _, entry := range strings.Split(s, ",") {
+		entry = strings.TrimSpace(entry)
+		if entry == "" {
+			continue
+		}
+		kv := strings.SplitN(entry, "=", 2)
+		if len(kv) != 2 {
+			log.Fatalf("invalid %s entry %q, expected key=value", key, entry)
+		}
+		k := strings.TrimSpace(kv[0])
+		v := strings.TrimSpace(kv[1])
+		out[k] = v
+	}
+	return out
+}
