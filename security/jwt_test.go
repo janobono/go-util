@@ -26,7 +26,7 @@ func TestJwt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error parsing token: %s", err)
 	}
-	assert.Equal(t, "test data", (*parsedToken)["data"])
+	assert.Equal(t, "test data", (parsedToken)["data"])
 }
 
 func TestJwtExpired(t *testing.T) {

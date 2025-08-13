@@ -80,7 +80,7 @@ func (t *JwtToken) GenerateToken(claims jwt.MapClaims) (string, error) {
 	return signedToken, nil
 }
 
-func (t *JwtToken) ParseToken(ctx context.Context, tokenString string) (*jwt.MapClaims, error) {
+func (t *JwtToken) ParseToken(ctx context.Context, tokenString string) (jwt.MapClaims, error) {
 	keyFunc := func(token *jwt.Token) (interface{}, error) {
 		return t.getKeyFunc(ctx, token)
 	}
@@ -104,7 +104,7 @@ func (t *JwtToken) ParseToken(ctx context.Context, tokenString string) (*jwt.Map
 		return nil, errors.New("invalid issuer")
 	}
 
-	return &claims, nil
+	return claims, nil
 }
 
 func (t *JwtToken) getKeyFunc(ctx context.Context, token *jwt.Token) (interface{}, error) {
