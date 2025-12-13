@@ -11,15 +11,19 @@ import (
 )
 
 type grpcContextKey string
+type GrpcAuthTokenType string
 
 const (
-	grpcBearerPrefix                  = "Bearer "
-	grpcAccessTokenKey grpcContextKey = "accessToken"
-	grpcUserDetailKey  grpcContextKey = "userDetail"
+	grpcBasicAuthPrefix                      = "Basic "
+	grpcBearerPrefix                         = "Bearer "
+	grpcAccessTokenKey     grpcContextKey    = "accessToken"
+	grpcUserDetailKey      grpcContextKey    = "userDetail"
+	GrpcBasicAuthTokenType GrpcAuthTokenType = "basic"
+	GrpcBearerTokenType    GrpcAuthTokenType = "bearer"
 )
 
 type UserDetailDecoder[T any] interface {
-	DecodeGrpcUserDetail(ctx context.Context, token string) (T, error)
+	DecodeGrpcUserDetail(ctx context.Context, tokenType GrpcAuthTokenType, token string) (T, error)
 	GetGrpcUserAuthorities(ctx context.Context, userDetail T) ([]string, error)
 }
 
@@ -50,12 +54,24 @@ func (g *GrpcTokenInterceptor[T]) InterceptToken(methods []GrpcSecuredMethod) gr
 			if len(authHeader) == 0 {
 				authHeader = md.Get("Authorization")
 			}
-			if len(authHeader) == 0 || !strings.HasPrefix(authHeader[0], grpcBearerPrefix) {
-				return nil, status.Errorf(codes.Unauthenticated, "missing or invalid Bearer token")
+			if len(authHeader) == 0 ||
+				(!strings.HasPrefix(authHeader[0], grpcBasicAuthPrefix) &&
+					!strings.HasPrefix(authHeader[0], grpcBearerPrefix)) {
+				return nil, status.Errorf(codes.Unauthenticated, "missing or invalid authorization token")
 			}
 
-			token := authHeader[0][len(grpcBearerPrefix):]
-			userDetail, err := g.userDetailDecoder.DecodeGrpcUserDetail(ctx, token)
+			var tokenType GrpcAuthTokenType
+			var token string
+
+			if strings.HasPrefix(authHeader[0], grpcBasicAuthPrefix) {
+				tokenType = GrpcBasicAuthTokenType
+				token = authHeader[0][len(grpcBasicAuthPrefix):]
+			} else {
+				tokenType = GrpcBearerTokenType
+				token = authHeader[0][len(grpcBearerPrefix):]
+			}
+
+			userDetail, err := g.userDetailDecoder.DecodeGrpcUserDetail(ctx, tokenType, token)
 			if err != nil {
 				return nil, status.Errorf(codes.Unauthenticated, "%s", err.Error())
 			}
