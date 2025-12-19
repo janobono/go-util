@@ -40,11 +40,11 @@ func (m mockDecoder) GetGrpcUserAuthorities(ctx context.Context, user mockGrpcUs
 // handler that asserts context values set by interceptor
 func makeAssertingHandler(t *testing.T, wantToken string, wantUser mockGrpcUser) grpc.UnaryHandler {
 	return func(ctx context.Context, req any) (any, error) {
-		gotToken, ok := GetGrpcAccessToken(ctx)
+		gotToken, ok := ContextAccessToken(ctx)
 		require.True(t, ok, "expected token in context")
 		assert.Equal(t, wantToken, gotToken)
 
-		gotUser, ok := GetGrpcUserDetail[mockGrpcUser](ctx)
+		gotUser, ok := ContextUserDetail[mockGrpcUser](ctx)
 		require.True(t, ok, "expected user detail in context")
 		assert.Equal(t, wantUser, gotUser)
 
@@ -249,9 +249,9 @@ func TestInterceptor_NoSecuredMethod(t *testing.T) {
 
 func TestGetGrpcUserDetail_Found(t *testing.T) {
 	expected := mockGrpcUser{ID: "Alice"}
-	ctx := context.WithValue(context.Background(), grpcUserDetailKey, expected)
+	ctx := context.WithValue(context.Background(), UserDetailKey, expected)
 
-	actual, ok := GetGrpcUserDetail[mockGrpcUser](ctx)
+	actual, ok := ContextUserDetail[mockGrpcUser](ctx)
 	assert.True(t, ok)
 	assert.Equal(t, expected, actual)
 }
@@ -259,24 +259,24 @@ func TestGetGrpcUserDetail_Found(t *testing.T) {
 func TestGetGrpcUserDetail_NotFound(t *testing.T) {
 	ctx := context.Background()
 
-	actual, ok := GetGrpcUserDetail[mockGrpcUser](ctx)
+	actual, ok := ContextUserDetail[mockGrpcUser](ctx)
 	assert.False(t, ok)
 	assert.Equal(t, mockGrpcUser{}, actual)
 }
 
 func TestGetGrpcUserDetail_WrongType(t *testing.T) {
-	ctx := context.WithValue(context.Background(), grpcUserDetailKey, "not a user")
+	ctx := context.WithValue(context.Background(), UserDetailKey, "not a user")
 
-	actual, ok := GetGrpcUserDetail[mockGrpcUser](ctx)
+	actual, ok := ContextUserDetail[mockGrpcUser](ctx)
 	assert.False(t, ok)
 	assert.Equal(t, mockGrpcUser{}, actual)
 }
 
 func TestGetGrpcAccessToken_Found(t *testing.T) {
 	expected := "some-token"
-	ctx := context.WithValue(context.Background(), grpcAccessTokenKey, expected)
+	ctx := context.WithValue(context.Background(), AccessTokenKey, expected)
 
-	actual, ok := GetGrpcAccessToken(ctx)
+	actual, ok := ContextAccessToken(ctx)
 	assert.True(t, ok)
 	assert.Equal(t, expected, actual)
 }
@@ -284,7 +284,7 @@ func TestGetGrpcAccessToken_Found(t *testing.T) {
 func TestGetGrpcAccessToken_NotFound(t *testing.T) {
 	ctx := context.Background()
 
-	actual, ok := GetGrpcAccessToken(ctx)
+	actual, ok := ContextAccessToken(ctx)
 	assert.False(t, ok)
 	assert.Equal(t, "", actual)
 }

@@ -1,5 +1,14 @@
 package security
 
+import "context"
+
+type contextKey string
+
+const (
+	AccessTokenKey contextKey = "accessToken"
+	UserDetailKey  contextKey = "userDetail"
+)
+
 type GrpcSecuredMethod struct {
 	Method      string
 	Authorities []string
@@ -25,4 +34,23 @@ func FindGrpcSecuredMethod(methods []GrpcSecuredMethod, methodName string) *Grpc
 		}
 	}
 	return nil
+}
+
+func ContextAccessToken(ctx context.Context) (string, bool) {
+	value := ctx.Value(AccessTokenKey)
+	if value == nil {
+		return "", false
+	}
+	typedValue, ok := value.(string)
+	return typedValue, ok
+}
+
+func ContextUserDetail[T any](ctx context.Context) (T, bool) {
+	value := ctx.Value(UserDetailKey)
+	if value == nil {
+		var zero T
+		return zero, false
+	}
+	typedValue, ok := value.(T)
+	return typedValue, ok
 }

@@ -10,14 +10,11 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type grpcContextKey string
 type GrpcAuthTokenType string
 
 const (
 	grpcBasicAuthPrefix                      = "Basic "
 	grpcBearerPrefix                         = "Bearer "
-	grpcAccessTokenKey     grpcContextKey    = "accessToken"
-	grpcUserDetailKey      grpcContextKey    = "userDetail"
 	GrpcBasicAuthTokenType GrpcAuthTokenType = "basic"
 	GrpcBearerTokenType    GrpcAuthTokenType = "bearer"
 )
@@ -90,28 +87,9 @@ func (g *GrpcTokenInterceptor[T]) InterceptToken(methods []GrpcSecuredMethod) gr
 			return nil, status.Error(codes.PermissionDenied, "insufficient permissions")
 		}
 
-		ctx = context.WithValue(ctx, grpcAccessTokenKey, token)
-		ctx = context.WithValue(ctx, grpcUserDetailKey, userDetail)
+		ctx = context.WithValue(ctx, AccessTokenKey, token)
+		ctx = context.WithValue(ctx, UserDetailKey, userDetail)
 
 		return handler(ctx, req)
 	}
-}
-
-func GetGrpcAccessToken(ctx context.Context) (string, bool) {
-	value := ctx.Value(grpcAccessTokenKey)
-	if value == nil {
-		return "", false
-	}
-	typedValue, ok := value.(string)
-	return typedValue, ok
-}
-
-func GetGrpcUserDetail[T any](ctx context.Context) (T, bool) {
-	value := ctx.Value(grpcUserDetailKey)
-	if value == nil {
-		var zero T
-		return zero, false
-	}
-	typedValue, ok := value.(T)
-	return typedValue, ok
 }

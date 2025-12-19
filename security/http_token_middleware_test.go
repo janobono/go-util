@@ -146,8 +146,8 @@ func setupRouter(config HttpSecurityConfig) *gin.Engine {
 		_, userOK := GetHttpUserDetail[any](c)
 
 		// request context storage
-		rToken, rTokOK := AccessTokenFromContext(c.Request.Context())
-		_, rUserOK := UserDetailFromContext[any](c.Request.Context())
+		rToken, rTokOK := ContextAccessToken(c.Request.Context())
+		_, rUserOK := ContextUserDetail[any](c.Request.Context())
 
 		// Only assert when middleware should have stored values:
 		// (If missing, return 500 to make tests catch regressions)
@@ -164,8 +164,8 @@ func setupRouter(config HttpSecurityConfig) *gin.Engine {
 		token, tokOK := GetHttpAccessToken(c)
 		_, userOK := GetHttpUserDetail[any](c)
 
-		rToken, rTokOK := AccessTokenFromContext(c.Request.Context())
-		_, rUserOK := UserDetailFromContext[any](c.Request.Context())
+		rToken, rTokOK := ContextAccessToken(c.Request.Context())
+		_, rUserOK := ContextUserDetail[any](c.Request.Context())
 
 		if !tokOK || !userOK || !rTokOK || !rUserOK || token == "" || rToken == "" {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "missing auth in context"})
@@ -179,8 +179,8 @@ func setupRouter(config HttpSecurityConfig) *gin.Engine {
 		token, tokOK := GetHttpAccessToken(c)
 		_, userOK := GetHttpUserDetail[any](c)
 
-		rToken, rTokOK := AccessTokenFromContext(c.Request.Context())
-		_, rUserOK := UserDetailFromContext[any](c.Request.Context())
+		rToken, rTokOK := ContextAccessToken(c.Request.Context())
+		_, rUserOK := ContextUserDetail[any](c.Request.Context())
 
 		if !tokOK || !userOK || !rTokOK || !rUserOK || token == "" || rToken == "" {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "missing auth in context"})
@@ -194,8 +194,8 @@ func setupRouter(config HttpSecurityConfig) *gin.Engine {
 		token, tokOK := GetHttpAccessToken(c)
 		_, userOK := GetHttpUserDetail[any](c)
 
-		rToken, rTokOK := AccessTokenFromContext(c.Request.Context())
-		_, rUserOK := UserDetailFromContext[any](c.Request.Context())
+		rToken, rTokOK := ContextAccessToken(c.Request.Context())
+		_, rUserOK := ContextUserDetail[any](c.Request.Context())
 
 		if !tokOK || !userOK || !rTokOK || !rUserOK || token == "" || rToken == "" {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "missing auth in context"})
@@ -210,8 +210,8 @@ func setupRouter(config HttpSecurityConfig) *gin.Engine {
 		token, tokOK := GetHttpAccessToken(c)
 		_, userOK := GetHttpUserDetail[any](c)
 
-		rToken, rTokOK := AccessTokenFromContext(c.Request.Context())
-		_, rUserOK := UserDetailFromContext[any](c.Request.Context())
+		rToken, rTokOK := ContextAccessToken(c.Request.Context())
+		_, rUserOK := ContextUserDetail[any](c.Request.Context())
 
 		if !tokOK || !userOK || !rTokOK || !rUserOK || token == "" || rToken == "" {
 			c.AbortWithStatusJSON(http.StatusInternalServerError, gin.H{"error": "missing auth in context"})

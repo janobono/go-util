@@ -13,13 +13,6 @@ const (
 	httpUserDetailKey  = "userDetail"  // gin.Context keys
 )
 
-type reqCtxKey string
-
-const (
-	reqCtxAccessTokenKey reqCtxKey = "accessToken"
-	reqCtxUserDetailKey  reqCtxKey = "userDetail"
-)
-
 type HttpHandlers[T any] interface {
 	MissingAuthorizationHeader(c *gin.Context)
 	Unauthorized(c *gin.Context)
@@ -103,8 +96,8 @@ func storeAuth[T any](ctx *gin.Context, token string, userDetail T) {
 	ctx.Set(httpUserDetailKey, userDetail)
 
 	rctx := ctx.Request.Context()
-	rctx = context.WithValue(rctx, reqCtxAccessTokenKey, token)
-	rctx = context.WithValue(rctx, reqCtxUserDetailKey, userDetail)
+	rctx = context.WithValue(rctx, AccessTokenKey, token)
+	rctx = context.WithValue(rctx, UserDetailKey, userDetail)
 	ctx.Request = ctx.Request.WithContext(rctx)
 }
 
@@ -125,22 +118,6 @@ func GetHttpUserDetail[T any](ctx *gin.Context) (T, bool) {
 	}
 	typed, ok := value.(T)
 	return typed, ok
-}
-
-func AccessTokenFromContext(ctx context.Context) (string, bool) {
-	v := ctx.Value(reqCtxAccessTokenKey)
-	s, ok := v.(string)
-	return s, ok
-}
-
-func UserDetailFromContext[T any](ctx context.Context) (T, bool) {
-	v := ctx.Value(reqCtxUserDetailKey)
-	typed, ok := v.(T)
-	if !ok {
-		var zero T
-		return zero, false
-	}
-	return typed, true
 }
 
 func isPublic(path, method string, public map[string]struct{}) bool {
