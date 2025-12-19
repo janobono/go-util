@@ -1,12 +1,18 @@
 package security
 
-import "context"
+import (
+	"context"
+)
 
-type contextKey string
+type ContextKey string
 
 const (
-	AccessTokenKey contextKey = "accessToken"
-	UserDetailKey  contextKey = "userDetail"
+	BasicPrefix                  = "Basic "
+	BearerPrefix                 = "Bearer "
+	GinAccessTokenKey            = "accessToken"
+	GinUserDetailKey             = "userDetail"
+	AccessTokenKey    ContextKey = "accessToken"
+	UserDetailKey     ContextKey = "userDetail"
 )
 
 type GrpcSecuredMethod struct {

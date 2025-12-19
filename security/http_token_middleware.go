@@ -7,12 +7,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const (
-	httpBearerPrefix   = "Bearer "
-	httpAccessTokenKey = "accessToken" // gin.Context keys
-	httpUserDetailKey  = "userDetail"  // gin.Context keys
-)
-
 type HttpHandlers[T any] interface {
 	MissingAuthorizationHeader(c *gin.Context)
 	Unauthorized(c *gin.Context)
@@ -56,11 +50,11 @@ func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
 		}
 
 		authHeader := ctx.GetHeader("Authorization")
-		if !strings.HasPrefix(authHeader, httpBearerPrefix) {
+		if !strings.HasPrefix(authHeader, BearerPrefix) {
 			h.httpHandlers.MissingAuthorizationHeader(ctx)
 			return
 		}
-		token := strings.TrimPrefix(authHeader, httpBearerPrefix)
+		token := strings.TrimPrefix(authHeader, BearerPrefix)
 
 		userDetail, err := h.httpHandlers.DecodeUserDetail(ctx, token)
 		if err != nil {
@@ -92,8 +86,8 @@ func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
 }
 
 func storeAuth[T any](ctx *gin.Context, token string, userDetail T) {
-	ctx.Set(httpAccessTokenKey, token)
-	ctx.Set(httpUserDetailKey, userDetail)
+	ctx.Set(GinAccessTokenKey, token)
+	ctx.Set(GinUserDetailKey, userDetail)
 
 	rctx := ctx.Request.Context()
 	rctx = context.WithValue(rctx, AccessTokenKey, token)
@@ -102,7 +96,7 @@ func storeAuth[T any](ctx *gin.Context, token string, userDetail T) {
 }
 
 func GetHttpAccessToken(ctx *gin.Context) (string, bool) {
-	value, exists := ctx.Get(httpAccessTokenKey)
+	value, exists := ctx.Get(GinAccessTokenKey)
 	if !exists {
 		return "", false
 	}
@@ -111,7 +105,7 @@ func GetHttpAccessToken(ctx *gin.Context) (string, bool) {
 }
 
 func GetHttpUserDetail[T any](ctx *gin.Context) (T, bool) {
-	value, exists := ctx.Get(httpUserDetailKey)
+	value, exists := ctx.Get(GinUserDetailKey)
 	if !exists {
 		var zero T
 		return zero, false

@@ -13,8 +13,6 @@ import (
 type GrpcAuthTokenType string
 
 const (
-	grpcBasicAuthPrefix                      = "Basic "
-	grpcBearerPrefix                         = "Bearer "
 	GrpcBasicAuthTokenType GrpcAuthTokenType = "basic"
 	GrpcBearerTokenType    GrpcAuthTokenType = "bearer"
 )
@@ -59,12 +57,12 @@ func (g *GrpcTokenInterceptor[T]) InterceptToken(methods []GrpcSecuredMethod) gr
 		var token string
 
 		switch {
-		case strings.HasPrefix(raw, grpcBasicAuthPrefix):
+		case strings.HasPrefix(raw, BasicPrefix):
 			tokenType = GrpcBasicAuthTokenType
-			token = strings.TrimSpace(raw[len(grpcBasicAuthPrefix):])
-		case strings.HasPrefix(raw, grpcBearerPrefix):
+			token = strings.TrimSpace(raw[len(BasicPrefix):])
+		case strings.HasPrefix(raw, BearerPrefix):
 			tokenType = GrpcBearerTokenType
-			token = strings.TrimSpace(raw[len(grpcBearerPrefix):])
+			token = strings.TrimSpace(raw[len(BearerPrefix):])
 		default:
 			return nil, status.Error(codes.Unauthenticated, "invalid authorization scheme")
 		}
