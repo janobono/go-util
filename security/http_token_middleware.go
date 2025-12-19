@@ -1,6 +1,7 @@
 package security
 
 import (
+	"context"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -8,8 +9,15 @@ import (
 
 const (
 	httpBearerPrefix   = "Bearer "
-	httpAccessTokenKey = "accessToken"
-	httpUserDetailKey  = "userDetail"
+	httpAccessTokenKey = "accessToken" // gin.Context keys
+	httpUserDetailKey  = "userDetail"  // gin.Context keys
+)
+
+type reqCtxKey string
+
+const (
+	reqCtxAccessTokenKey reqCtxKey = "accessToken"
+	reqCtxUserDetailKey  reqCtxKey = "userDetail"
 )
 
 type HttpHandlers[T any] interface {
@@ -69,8 +77,7 @@ func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
 
 		allowedRoles, exists := matchAuthorities(fullPath, method, h.config.Authorities)
 		if !exists || len(allowedRoles) == 0 {
-			ctx.Set(httpAccessTokenKey, token)
-			ctx.Set(httpUserDetailKey, userDetail)
+			storeAuth(ctx, token, userDetail)
 			ctx.Next()
 			return
 		}
@@ -86,10 +93,19 @@ func (h *httpTokenMiddleware[T]) HandlerFunc() gin.HandlerFunc {
 			return
 		}
 
-		ctx.Set(httpAccessTokenKey, token)
-		ctx.Set(httpUserDetailKey, userDetail)
+		storeAuth(ctx, token, userDetail)
 		ctx.Next()
 	}
+}
+
+func storeAuth[T any](ctx *gin.Context, token string, userDetail T) {
+	ctx.Set(httpAccessTokenKey, token)
+	ctx.Set(httpUserDetailKey, userDetail)
+
+	rctx := ctx.Request.Context()
+	rctx = context.WithValue(rctx, reqCtxAccessTokenKey, token)
+	rctx = context.WithValue(rctx, reqCtxUserDetailKey, userDetail)
+	ctx.Request = ctx.Request.WithContext(rctx)
 }
 
 func GetHttpAccessToken(ctx *gin.Context) (string, bool) {
@@ -109,6 +125,22 @@ func GetHttpUserDetail[T any](ctx *gin.Context) (T, bool) {
 	}
 	typed, ok := value.(T)
 	return typed, ok
+}
+
+func AccessTokenFromContext(ctx context.Context) (string, bool) {
+	v := ctx.Value(reqCtxAccessTokenKey)
+	s, ok := v.(string)
+	return s, ok
+}
+
+func UserDetailFromContext[T any](ctx context.Context) (T, bool) {
+	v := ctx.Value(reqCtxUserDetailKey)
+	typed, ok := v.(T)
+	if !ok {
+		var zero T
+		return zero, false
+	}
+	return typed, true
 }
 
 func isPublic(path, method string, public map[string]struct{}) bool {

@@ -32,62 +32,66 @@ type GrpcTokenInterceptor[T any] struct {
 }
 
 func NewGrpcTokenInterceptor[T any](userDetailDecoder UserDetailDecoder[T]) *GrpcTokenInterceptor[T] {
-	return &GrpcTokenInterceptor[T]{userDetailDecoder}
+	return &GrpcTokenInterceptor[T]{userDetailDecoder: userDetailDecoder}
 }
 
 func (g *GrpcTokenInterceptor[T]) InterceptToken(methods []GrpcSecuredMethod) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
-		req interface{},
+		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
-	) (interface{}, error) {
+	) (any, error) {
 		securedMethod := FindGrpcSecuredMethod(methods, info.FullMethod)
-
-		if securedMethod != nil {
-			md, ok := metadata.FromIncomingContext(ctx)
-			if !ok {
-				return nil, status.Errorf(codes.Unauthenticated, "missing metadata")
-			}
-
-			authHeader := md.Get("authorization")
-			if len(authHeader) == 0 {
-				authHeader = md.Get("Authorization")
-			}
-			if len(authHeader) == 0 ||
-				(!strings.HasPrefix(authHeader[0], grpcBasicAuthPrefix) &&
-					!strings.HasPrefix(authHeader[0], grpcBearerPrefix)) {
-				return nil, status.Errorf(codes.Unauthenticated, "missing or invalid authorization token")
-			}
-
-			var tokenType GrpcAuthTokenType
-			var token string
-
-			if strings.HasPrefix(authHeader[0], grpcBasicAuthPrefix) {
-				tokenType = GrpcBasicAuthTokenType
-				token = authHeader[0][len(grpcBasicAuthPrefix):]
-			} else {
-				tokenType = GrpcBearerTokenType
-				token = authHeader[0][len(grpcBearerPrefix):]
-			}
-
-			userDetail, err := g.userDetailDecoder.DecodeGrpcUserDetail(ctx, tokenType, token)
-			if err != nil {
-				return nil, status.Errorf(codes.Unauthenticated, "%s", err.Error())
-			}
-
-			userAuthorities, err := g.userDetailDecoder.GetGrpcUserAuthorities(ctx, userDetail)
-			if err != nil {
-				return nil, status.Errorf(codes.Unauthenticated, "%s", err.Error())
-			}
-
-			if len(securedMethod.Authorities) > 0 && !HasAnyAuthority(securedMethod.Authorities, userAuthorities) {
-				return nil, status.Errorf(codes.PermissionDenied, "insufficient permissions")
-			}
-
-			ctx = context.WithValue(ctx, grpcAccessTokenKey, token)
-			ctx = context.WithValue(ctx, grpcUserDetailKey, userDetail)
+		if securedMethod == nil {
+			return handler(ctx, req)
 		}
+
+		md, ok := metadata.FromIncomingContext(ctx)
+		if !ok {
+			return nil, status.Error(codes.Unauthenticated, "missing metadata")
+		}
+
+		authHeader := md.Get("authorization")
+		if len(authHeader) == 0 {
+			return nil, status.Error(codes.Unauthenticated, "missing authorization")
+		}
+
+		raw := authHeader[0]
+		var tokenType GrpcAuthTokenType
+		var token string
+
+		switch {
+		case strings.HasPrefix(raw, grpcBasicAuthPrefix):
+			tokenType = GrpcBasicAuthTokenType
+			token = strings.TrimSpace(raw[len(grpcBasicAuthPrefix):])
+		case strings.HasPrefix(raw, grpcBearerPrefix):
+			tokenType = GrpcBearerTokenType
+			token = strings.TrimSpace(raw[len(grpcBearerPrefix):])
+		default:
+			return nil, status.Error(codes.Unauthenticated, "invalid authorization scheme")
+		}
+
+		if token == "" {
+			return nil, status.Error(codes.Unauthenticated, "empty token")
+		}
+
+		userDetail, err := g.userDetailDecoder.DecodeGrpcUserDetail(ctx, tokenType, token)
+		if err != nil {
+			return nil, status.Error(codes.Unauthenticated, "invalid token")
+		}
+
+		userAuthorities, err := g.userDetailDecoder.GetGrpcUserAuthorities(ctx, userDetail)
+		if err != nil {
+			return nil, status.Error(codes.Internal, "failed to load authorities")
+		}
+
+		if len(securedMethod.Authorities) > 0 && !HasAnyAuthority(securedMethod.Authorities, userAuthorities) {
+			return nil, status.Error(codes.PermissionDenied, "insufficient permissions")
+		}
+
+		ctx = context.WithValue(ctx, grpcAccessTokenKey, token)
+		ctx = context.WithValue(ctx, grpcUserDetailKey, userDetail)
 
 		return handler(ctx, req)
 	}

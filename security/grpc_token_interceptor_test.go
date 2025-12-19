@@ -37,7 +37,22 @@ func (m mockDecoder) GetGrpcUserAuthorities(ctx context.Context, user mockGrpcUs
 	return user.Authorities, nil
 }
 
-func fakeHandler(ctx context.Context, req interface{}) (interface{}, error) {
+// handler that asserts context values set by interceptor
+func makeAssertingHandler(t *testing.T, wantToken string, wantUser mockGrpcUser) grpc.UnaryHandler {
+	return func(ctx context.Context, req any) (any, error) {
+		gotToken, ok := GetGrpcAccessToken(ctx)
+		require.True(t, ok, "expected token in context")
+		assert.Equal(t, wantToken, gotToken)
+
+		gotUser, ok := GetGrpcUserDetail[mockGrpcUser](ctx)
+		require.True(t, ok, "expected user detail in context")
+		assert.Equal(t, wantUser, gotUser)
+
+		return "ok", nil
+	}
+}
+
+func fakeHandler(ctx context.Context, req any) (any, error) {
 	return "ok", nil
 }
 
@@ -59,7 +74,33 @@ func TestInterceptor_ValidBearerToken(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), md)
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
 
-	resp, err := interceptor.InterceptToken(methods)(ctx, nil, info, fakeHandler)
+	wantUser := mockGrpcUser{ID: "123", Authorities: []string{"ADMIN"}}
+	resp, err := interceptor.InterceptToken(methods)(ctx, nil, info, makeAssertingHandler(t, "token123", wantUser))
+	require.NoError(t, err)
+	assert.Equal(t, "ok", resp)
+}
+
+func TestInterceptor_ValidBearerToken_WithExtraSpaces(t *testing.T) {
+	decoder := mockDecoder{
+		DecodeFunc: func(tokenType GrpcAuthTokenType, token string) (mockGrpcUser, error) {
+			assert.Equal(t, GrpcBearerTokenType, tokenType)
+			// interceptor should TrimSpace
+			assert.Equal(t, "token123", token)
+			return mockGrpcUser{ID: "123", Authorities: []string{"ADMIN"}}, nil
+		},
+	}
+
+	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
+	methods := []GrpcSecuredMethod{
+		{Method: "/test.Service/Test", Authorities: []string{"ADMIN"}},
+	}
+
+	md := metadata.New(map[string]string{"authorization": "Bearer   token123   "})
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
+
+	wantUser := mockGrpcUser{ID: "123", Authorities: []string{"ADMIN"}}
+	resp, err := interceptor.InterceptToken(methods)(ctx, nil, info, makeAssertingHandler(t, "token123", wantUser))
 	require.NoError(t, err)
 	assert.Equal(t, "ok", resp)
 }
@@ -82,7 +123,8 @@ func TestInterceptor_ValidBasicToken(t *testing.T) {
 	ctx := metadata.NewIncomingContext(context.Background(), md)
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
 
-	resp, err := interceptor.InterceptToken(methods)(ctx, nil, info, fakeHandler)
+	wantUser := mockGrpcUser{ID: "123", Authorities: []string{"ADMIN"}}
+	resp, err := interceptor.InterceptToken(methods)(ctx, nil, info, makeAssertingHandler(t, "dXNlcjpwYXNz", wantUser))
 	require.NoError(t, err)
 	assert.Equal(t, "ok", resp)
 }
@@ -123,10 +165,23 @@ func TestInterceptor_InvalidAuthScheme(t *testing.T) {
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
+func TestInterceptor_EmptyToken_Bearer(t *testing.T) {
+	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](mockDecoder{})
+
+	md := metadata.New(map[string]string{"authorization": "Bearer    "})
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	methods := []GrpcSecuredMethod{{Method: "/test.Service/Test", Authorities: nil}}
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
+
+	_, err := interceptor.InterceptToken(methods)(ctx, nil, info, fakeHandler)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
 func TestInterceptor_InvalidToken(t *testing.T) {
 	decoder := mockDecoder{
 		DecodeFunc: func(tokenType GrpcAuthTokenType, token string) (mockGrpcUser, error) {
-			return mockGrpcUser{}, errors.New("invalid")
+			return mockGrpcUser{}, errors.New("invalid") // should not be leaked
 		},
 	}
 	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
@@ -139,6 +194,27 @@ func TestInterceptor_InvalidToken(t *testing.T) {
 
 	_, err := interceptor.InterceptToken(methods)(ctx, nil, info, fakeHandler)
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+func TestInterceptor_AuthoritiesLookupFailure_ReturnsInternal(t *testing.T) {
+	decoder := mockDecoder{
+		DecodeFunc: func(tokenType GrpcAuthTokenType, token string) (mockGrpcUser, error) {
+			return mockGrpcUser{ID: "x", Authorities: []string{"USER"}}, nil
+		},
+		AuthoritiesFunc: func(user mockGrpcUser) ([]string, error) {
+			return nil, errors.New("db down")
+		},
+	}
+	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
+
+	md := metadata.New(map[string]string{"authorization": "Bearer token"})
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+
+	methods := []GrpcSecuredMethod{{Method: "/test.Service/Test", Authorities: []string{"USER"}}}
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
+
+	_, err := interceptor.InterceptToken(methods)(ctx, nil, info, fakeHandler)
+	assert.Equal(t, codes.Internal, status.Code(err))
 }
 
 func TestInterceptor_InsufficientAuthorities(t *testing.T) {
