@@ -2,48 +2,58 @@ package security
 
 import (
 	"context"
+	"errors"
+	"strings"
 )
 
-type ContextKey string
+type PrincipalService[T any] interface {
+	GetPrincipal(tokenType AuthTokenType, token string) (T, error)
+}
+
+type AuthTokenType string
 
 const (
-	BasicPrefix                  = "Basic "
-	BearerPrefix                 = "Bearer "
-	GinAccessTokenKey            = "accessToken"
-	GinUserDetailKey             = "userDetail"
-	AccessTokenKey    ContextKey = "accessToken"
-	UserDetailKey     ContextKey = "userDetail"
+	UnknownToken AuthTokenType = ""
+	BasicToken   AuthTokenType = "basic"
+	BearerToken  AuthTokenType = "bearer"
 )
 
-type GrpcSecuredMethod struct {
-	Method      string
-	Authorities []string
+type ctxKey struct{ name string }
+
+var (
+	authTokenTypeKey = ctxKey{"authTokenType"}
+	authTokenKey     = ctxKey{"authToken"}
+	principalKey     = ctxKey{"principal"}
+)
+
+func parseToken(raw string) (AuthTokenType, string, error) {
+	parts := strings.SplitN(strings.TrimSpace(raw), " ", 2)
+	if len(parts) != 2 {
+		return UnknownToken, "", errors.New("invalid authorization scheme")
+	}
+	scheme, token := parts[0], strings.TrimSpace(parts[1])
+
+	switch {
+	case strings.EqualFold(scheme, "Basic"):
+		return BasicToken, token, nil
+	case strings.EqualFold(scheme, "Bearer"):
+		return BearerToken, token, nil
+	default:
+		return UnknownToken, "", errors.New("invalid authorization scheme")
+	}
 }
 
-func HasAnyAuthority(required, user []string) bool {
-	userSet := make(map[string]struct{}, len(user))
-	for _, role := range user {
-		userSet[role] = struct{}{}
+func ContextAuthTokenType(ctx context.Context) (AuthTokenType, bool) {
+	value := ctx.Value(authTokenTypeKey)
+	if value == nil {
+		return UnknownToken, false
 	}
-	for _, requiredRole := range required {
-		if _, ok := userSet[requiredRole]; ok {
-			return true
-		}
-	}
-	return false
+	typedValue, ok := value.(AuthTokenType)
+	return typedValue, ok
 }
 
-func FindGrpcSecuredMethod(methods []GrpcSecuredMethod, methodName string) *GrpcSecuredMethod {
-	for _, method := range methods {
-		if method.Method == methodName {
-			return &method
-		}
-	}
-	return nil
-}
-
-func ContextAccessToken(ctx context.Context) (string, bool) {
-	value := ctx.Value(AccessTokenKey)
+func ContextAuthToken(ctx context.Context) (string, bool) {
+	value := ctx.Value(authTokenKey)
 	if value == nil {
 		return "", false
 	}
@@ -51,8 +61,8 @@ func ContextAccessToken(ctx context.Context) (string, bool) {
 	return typedValue, ok
 }
 
-func ContextUserDetail[T any](ctx context.Context) (T, bool) {
-	value := ctx.Value(UserDetailKey)
+func ContextPrincipal[T any](ctx context.Context) (T, bool) {
+	value := ctx.Value(principalKey)
 	if value == nil {
 		var zero T
 		return zero, false

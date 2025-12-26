@@ -13,278 +13,317 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type mockGrpcUser struct {
+type mockPrincipal struct {
 	ID          string
 	Authorities []string
 }
 
-type mockDecoder struct {
-	DecodeFunc      func(tokenType GrpcAuthTokenType, token string) (mockGrpcUser, error)
-	AuthoritiesFunc func(user mockGrpcUser) ([]string, error)
+type mockGrpcTokenInterceptorService struct {
+	AuthNotRequiredFunc  func(fullMethod string) bool
+	AuthzNotRequiredFunc func(fullMethod string) bool
+	IsAuthorizedFunc     func(fullMethod string, principal mockPrincipal) bool
+	GetPrincipalFunc     func(tokenType AuthTokenType, token string) (mockPrincipal, error)
 }
 
-func (m mockDecoder) DecodeGrpcUserDetail(ctx context.Context, tokenType GrpcAuthTokenType, token string) (mockGrpcUser, error) {
-	if m.DecodeFunc == nil {
-		return mockGrpcUser{}, nil
+func (m mockGrpcTokenInterceptorService) AuthenticationNotRequired(fullMethod string) bool {
+	if m.AuthNotRequiredFunc == nil {
+		return false
 	}
-	return m.DecodeFunc(tokenType, token)
+	return m.AuthNotRequiredFunc(fullMethod)
 }
 
-func (m mockDecoder) GetGrpcUserAuthorities(ctx context.Context, user mockGrpcUser) ([]string, error) {
-	if m.AuthoritiesFunc != nil {
-		return m.AuthoritiesFunc(user)
+func (m mockGrpcTokenInterceptorService) AuthorizationNotRequired(fullMethod string) bool {
+	if m.AuthzNotRequiredFunc == nil {
+		return false
 	}
-	return user.Authorities, nil
+	return m.AuthzNotRequiredFunc(fullMethod)
 }
 
-// handler that asserts context values set by interceptor
-func makeAssertingHandler(t *testing.T, wantToken string, wantUser mockGrpcUser) grpc.UnaryHandler {
-	return func(ctx context.Context, req any) (any, error) {
-		gotToken, ok := ContextAccessToken(ctx)
-		require.True(t, ok, "expected token in context")
-		assert.Equal(t, wantToken, gotToken)
-
-		gotUser, ok := ContextUserDetail[mockGrpcUser](ctx)
-		require.True(t, ok, "expected user detail in context")
-		assert.Equal(t, wantUser, gotUser)
-
-		return "ok", nil
+func (m mockGrpcTokenInterceptorService) IsAuthorized(fullMethod string, principal mockPrincipal) bool {
+	if m.IsAuthorizedFunc == nil {
+		return true
 	}
+	return m.IsAuthorizedFunc(fullMethod, principal)
+}
+
+func (m mockGrpcTokenInterceptorService) GetPrincipal(tokenType AuthTokenType, token string) (mockPrincipal, error) {
+	if m.GetPrincipalFunc == nil {
+		return mockPrincipal{}, nil
+	}
+	return m.GetPrincipalFunc(tokenType, token)
 }
 
 func fakeHandler(ctx context.Context, req any) (any, error) {
 	return "ok", nil
 }
 
-func TestInterceptor_ValidBearerToken(t *testing.T) {
-	decoder := mockDecoder{
-		DecodeFunc: func(tokenType GrpcAuthTokenType, token string) (mockGrpcUser, error) {
-			assert.Equal(t, GrpcBearerTokenType, tokenType)
-			assert.Equal(t, "token123", token)
-			return mockGrpcUser{ID: "123", Authorities: []string{"ADMIN"}}, nil
+func makeAssertingHandler(t *testing.T, wantType AuthTokenType, wantToken string, wantPrincipal mockPrincipal) grpc.UnaryHandler {
+	return func(ctx context.Context, req any) (any, error) {
+		gotType, ok := ContextAuthTokenType(ctx)
+		require.True(t, ok, "expected auth token type in context")
+		assert.Equal(t, wantType, gotType)
+
+		gotToken, ok := ContextAuthToken(ctx)
+		require.True(t, ok, "expected auth token in context")
+		assert.Equal(t, wantToken, gotToken)
+
+		gotPrincipal, ok := ContextPrincipal[mockPrincipal](ctx)
+		require.True(t, ok, "expected principal in context")
+		assert.Equal(t, wantPrincipal, gotPrincipal)
+
+		return "ok", nil
+	}
+}
+
+func TestGrpcTokenInterceptor_AuthNotRequired_SkipsEverything(t *testing.T) {
+	svc := mockGrpcTokenInterceptorService{
+		AuthNotRequiredFunc: func(fullMethod string) bool { return true },
+		GetPrincipalFunc: func(tokenType AuthTokenType, token string) (mockPrincipal, error) {
+			t.Fatal("GetPrincipal must not be called when auth is not required")
+			return mockPrincipal{}, nil
+		},
+		IsAuthorizedFunc: func(fullMethod string, principal mockPrincipal) bool {
+			t.Fatal("IsAuthorized must not be called when auth is not required")
+			return true
 		},
 	}
 
-	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
-	methods := []GrpcSecuredMethod{
-		{Method: "/test.Service/Test", Authorities: []string{"ADMIN"}},
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Public"}
+
+	resp, err := interceptor.InterceptAuthToken()(context.Background(), nil, info, fakeHandler)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", resp)
+}
+
+func TestGrpcTokenInterceptor_MissingMetadata_Unauthenticated(t *testing.T) {
+	svc := mockGrpcTokenInterceptorService{}
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
+
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Secured"}
+
+	_, err := interceptor.InterceptAuthToken()(context.Background(), nil, info, fakeHandler)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+func TestGrpcTokenInterceptor_MissingAuthorization_Unauthenticated(t *testing.T) {
+	svc := mockGrpcTokenInterceptorService{}
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
+
+	md := metadata.New(nil)
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Secured"}
+
+	_, err := interceptor.InterceptAuthToken()(ctx, nil, info, fakeHandler)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+func TestGrpcTokenInterceptor_MultipleAuthorizationHeaders_Unauthenticated(t *testing.T) {
+	svc := mockGrpcTokenInterceptorService{}
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
+
+	md := metadata.New(map[string]string{"authorization": "Bearer a"})
+	md.Append("authorization", "Bearer b")
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Secured"}
+
+	_, err := interceptor.InterceptAuthToken()(ctx, nil, info, fakeHandler)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+func TestGrpcTokenInterceptor_InvalidAuthorizationScheme_Unauthenticated(t *testing.T) {
+	svc := mockGrpcTokenInterceptorService{}
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
+
+	md := metadata.New(map[string]string{"authorization": "Token abc"})
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Secured"}
+
+	_, err := interceptor.InterceptAuthToken()(ctx, nil, info, fakeHandler)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+func TestGrpcTokenInterceptor_EmptyToken_Unauthenticated(t *testing.T) {
+	svc := mockGrpcTokenInterceptorService{}
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
+
+	md := metadata.New(map[string]string{"authorization": "Bearer     "})
+	ctx := metadata.NewIncomingContext(context.Background(), md)
+	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Secured"}
+
+	_, err := interceptor.InterceptAuthToken()(ctx, nil, info, fakeHandler)
+	assert.Equal(t, codes.Unauthenticated, status.Code(err))
+}
+
+func TestGrpcTokenInterceptor_ValidBearerToken_SetsContext_Allows(t *testing.T) {
+	wantPrincipal := mockPrincipal{ID: "123", Authorities: []string{"ADMIN"}}
+
+	svc := mockGrpcTokenInterceptorService{
+		GetPrincipalFunc: func(tokenType AuthTokenType, token string) (mockPrincipal, error) {
+			assert.Equal(t, BearerToken, tokenType)
+			assert.Equal(t, "token123", token)
+			return wantPrincipal, nil
+		},
+		IsAuthorizedFunc: func(fullMethod string, principal mockPrincipal) bool {
+			assert.Equal(t, "/test.Service/Test", fullMethod)
+			assert.Equal(t, wantPrincipal, principal)
+			return true
+		},
 	}
+
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
 
 	md := metadata.New(map[string]string{"authorization": "Bearer token123"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
 
-	wantUser := mockGrpcUser{ID: "123", Authorities: []string{"ADMIN"}}
-	resp, err := interceptor.InterceptToken(methods)(ctx, nil, info, makeAssertingHandler(t, "token123", wantUser))
+	resp, err := interceptor.InterceptAuthToken()(ctx, nil, info, makeAssertingHandler(t, BearerToken, "token123", wantPrincipal))
 	require.NoError(t, err)
 	assert.Equal(t, "ok", resp)
 }
 
-func TestInterceptor_ValidBearerToken_WithExtraSpaces(t *testing.T) {
-	decoder := mockDecoder{
-		DecodeFunc: func(tokenType GrpcAuthTokenType, token string) (mockGrpcUser, error) {
-			assert.Equal(t, GrpcBearerTokenType, tokenType)
-			// interceptor should TrimSpace
+func TestGrpcTokenInterceptor_BearerScheme_CaseInsensitive(t *testing.T) {
+	wantPrincipal := mockPrincipal{ID: "x"}
+
+	svc := mockGrpcTokenInterceptorService{
+		GetPrincipalFunc: func(tokenType AuthTokenType, token string) (mockPrincipal, error) {
+			assert.Equal(t, BearerToken, tokenType)
 			assert.Equal(t, "token123", token)
-			return mockGrpcUser{ID: "123", Authorities: []string{"ADMIN"}}, nil
+			return wantPrincipal, nil
 		},
+		IsAuthorizedFunc: func(fullMethod string, principal mockPrincipal) bool { return true },
 	}
 
-	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
-	methods := []GrpcSecuredMethod{
-		{Method: "/test.Service/Test", Authorities: []string{"ADMIN"}},
-	}
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
 
-	md := metadata.New(map[string]string{"authorization": "Bearer   token123   "})
+	// lower-case scheme should still work
+	md := metadata.New(map[string]string{"authorization": "bearer token123"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
 
-	wantUser := mockGrpcUser{ID: "123", Authorities: []string{"ADMIN"}}
-	resp, err := interceptor.InterceptToken(methods)(ctx, nil, info, makeAssertingHandler(t, "token123", wantUser))
+	resp, err := interceptor.InterceptAuthToken()(ctx, nil, info, makeAssertingHandler(t, BearerToken, "token123", wantPrincipal))
 	require.NoError(t, err)
 	assert.Equal(t, "ok", resp)
 }
 
-func TestInterceptor_ValidBasicToken(t *testing.T) {
-	decoder := mockDecoder{
-		DecodeFunc: func(tokenType GrpcAuthTokenType, token string) (mockGrpcUser, error) {
-			assert.Equal(t, GrpcBasicAuthTokenType, tokenType)
-			assert.Equal(t, "dXNlcjpwYXNz", token) // base64("user:pass")
-			return mockGrpcUser{ID: "123", Authorities: []string{"ADMIN"}}, nil
+func TestGrpcTokenInterceptor_ValidBasicToken_SetsContext_Allows(t *testing.T) {
+	wantPrincipal := mockPrincipal{ID: "u1"}
+
+	svc := mockGrpcTokenInterceptorService{
+		GetPrincipalFunc: func(tokenType AuthTokenType, token string) (mockPrincipal, error) {
+			assert.Equal(t, BasicToken, tokenType)
+			assert.Equal(t, "dXNlcjpwYXNz", token)
+			return wantPrincipal, nil
 		},
+		IsAuthorizedFunc: func(fullMethod string, principal mockPrincipal) bool { return true },
 	}
 
-	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
-	methods := []GrpcSecuredMethod{
-		{Method: "/test.Service/Test", Authorities: []string{"ADMIN"}},
-	}
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
 
 	md := metadata.New(map[string]string{"authorization": "Basic dXNlcjpwYXNz"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
 
-	wantUser := mockGrpcUser{ID: "123", Authorities: []string{"ADMIN"}}
-	resp, err := interceptor.InterceptToken(methods)(ctx, nil, info, makeAssertingHandler(t, "dXNlcjpwYXNz", wantUser))
+	resp, err := interceptor.InterceptAuthToken()(ctx, nil, info, makeAssertingHandler(t, BasicToken, "dXNlcjpwYXNz", wantPrincipal))
 	require.NoError(t, err)
 	assert.Equal(t, "ok", resp)
 }
 
-func TestInterceptor_MissingMetadata(t *testing.T) {
-	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](mockDecoder{})
-
-	methods := []GrpcSecuredMethod{{Method: "/test.Service/Test", Authorities: nil}}
-	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
-
-	_, err := interceptor.InterceptToken(methods)(context.Background(), nil, info, fakeHandler)
-	assert.Equal(t, codes.Unauthenticated, status.Code(err))
-}
-
-func TestInterceptor_MissingToken(t *testing.T) {
-	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](mockDecoder{})
-
-	md := metadata.New(nil)
-	ctx := metadata.NewIncomingContext(context.Background(), md)
-
-	methods := []GrpcSecuredMethod{{Method: "/test.Service/Test", Authorities: nil}}
-	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
-
-	_, err := interceptor.InterceptToken(methods)(ctx, nil, info, fakeHandler)
-	assert.Equal(t, codes.Unauthenticated, status.Code(err))
-}
-
-func TestInterceptor_InvalidAuthScheme(t *testing.T) {
-	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](mockDecoder{})
-
-	md := metadata.New(map[string]string{"authorization": "Token abc"})
-	ctx := metadata.NewIncomingContext(context.Background(), md)
-
-	methods := []GrpcSecuredMethod{{Method: "/test.Service/Test", Authorities: nil}}
-	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
-
-	_, err := interceptor.InterceptToken(methods)(ctx, nil, info, fakeHandler)
-	assert.Equal(t, codes.Unauthenticated, status.Code(err))
-}
-
-func TestInterceptor_EmptyToken_Bearer(t *testing.T) {
-	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](mockDecoder{})
-
-	md := metadata.New(map[string]string{"authorization": "Bearer    "})
-	ctx := metadata.NewIncomingContext(context.Background(), md)
-
-	methods := []GrpcSecuredMethod{{Method: "/test.Service/Test", Authorities: nil}}
-	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
-
-	_, err := interceptor.InterceptToken(methods)(ctx, nil, info, fakeHandler)
-	assert.Equal(t, codes.Unauthenticated, status.Code(err))
-}
-
-func TestInterceptor_InvalidToken(t *testing.T) {
-	decoder := mockDecoder{
-		DecodeFunc: func(tokenType GrpcAuthTokenType, token string) (mockGrpcUser, error) {
-			return mockGrpcUser{}, errors.New("invalid") // should not be leaked
+func TestGrpcTokenInterceptor_InvalidToken_Unauthenticated(t *testing.T) {
+	svc := mockGrpcTokenInterceptorService{
+		GetPrincipalFunc: func(tokenType AuthTokenType, token string) (mockPrincipal, error) {
+			return mockPrincipal{}, errors.New("bad token")
 		},
 	}
-	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
 
-	md := metadata.New(map[string]string{"authorization": "Bearer badtoken"})
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
+
+	md := metadata.New(map[string]string{"authorization": "Bearer bad"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
-
-	methods := []GrpcSecuredMethod{{Method: "/test.Service/Test", Authorities: nil}}
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
 
-	_, err := interceptor.InterceptToken(methods)(ctx, nil, info, fakeHandler)
+	_, err := interceptor.InterceptAuthToken()(ctx, nil, info, fakeHandler)
 	assert.Equal(t, codes.Unauthenticated, status.Code(err))
 }
 
-func TestInterceptor_AuthoritiesLookupFailure_ReturnsInternal(t *testing.T) {
-	decoder := mockDecoder{
-		DecodeFunc: func(tokenType GrpcAuthTokenType, token string) (mockGrpcUser, error) {
-			return mockGrpcUser{ID: "x", Authorities: []string{"USER"}}, nil
+func TestGrpcTokenInterceptor_AuthzNotRequired_SkipsIsAuthorized(t *testing.T) {
+	wantPrincipal := mockPrincipal{ID: "x"}
+
+	svc := mockGrpcTokenInterceptorService{
+		AuthzNotRequiredFunc: func(fullMethod string) bool { return true },
+		GetPrincipalFunc: func(tokenType AuthTokenType, token string) (mockPrincipal, error) {
+			return wantPrincipal, nil
 		},
-		AuthoritiesFunc: func(user mockGrpcUser) ([]string, error) {
-			return nil, errors.New("db down")
+		IsAuthorizedFunc: func(fullMethod string, principal mockPrincipal) bool {
+			t.Fatal("IsAuthorized must not be called when authorization is not required")
+			return true
 		},
 	}
-	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
+
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
 
 	md := metadata.New(map[string]string{"authorization": "Bearer token"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
-
-	methods := []GrpcSecuredMethod{{Method: "/test.Service/Test", Authorities: []string{"USER"}}}
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
 
-	_, err := interceptor.InterceptToken(methods)(ctx, nil, info, fakeHandler)
-	assert.Equal(t, codes.Internal, status.Code(err))
+	resp, err := interceptor.InterceptAuthToken()(ctx, nil, info, makeAssertingHandler(t, BearerToken, "token", wantPrincipal))
+	require.NoError(t, err)
+	assert.Equal(t, "ok", resp)
 }
 
-func TestInterceptor_InsufficientAuthorities(t *testing.T) {
-	decoder := mockDecoder{
-		DecodeFunc: func(tokenType GrpcAuthTokenType, token string) (mockGrpcUser, error) {
-			return mockGrpcUser{ID: "x", Authorities: []string{"USER"}}, nil
+func TestGrpcTokenInterceptor_NotAuthorized_PermissionDenied(t *testing.T) {
+	wantPrincipal := mockPrincipal{ID: "x"}
+
+	svc := mockGrpcTokenInterceptorService{
+		GetPrincipalFunc: func(tokenType AuthTokenType, token string) (mockPrincipal, error) {
+			return wantPrincipal, nil
+		},
+		IsAuthorizedFunc: func(fullMethod string, principal mockPrincipal) bool {
+			return false
 		},
 	}
-	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](decoder)
+
+	interceptor := NewGrpcTokenInterceptor[mockPrincipal](svc)
 
 	md := metadata.New(map[string]string{"authorization": "Bearer token"})
 	ctx := metadata.NewIncomingContext(context.Background(), md)
-
-	methods := []GrpcSecuredMethod{
-		{Method: "/test.Service/Test", Authorities: []string{"ADMIN"}},
-	}
 	info := &grpc.UnaryServerInfo{FullMethod: "/test.Service/Test"}
 
-	_, err := interceptor.InterceptToken(methods)(ctx, nil, info, fakeHandler)
+	_, err := interceptor.InterceptAuthToken()(ctx, nil, info, fakeHandler)
 	assert.Equal(t, codes.PermissionDenied, status.Code(err))
 }
 
-func TestInterceptor_NoSecuredMethod(t *testing.T) {
-	interceptor := NewGrpcTokenInterceptor[mockGrpcUser](mockDecoder{})
-
-	info := &grpc.UnaryServerInfo{FullMethod: "/unprotected.Method"}
-	resp, err := interceptor.InterceptToken(nil)(context.Background(), nil, info, fakeHandler)
-
-	require.NoError(t, err)
-	assert.Equal(t, "ok", resp)
-}
-
-func TestGetGrpcUserDetail_Found(t *testing.T) {
-	expected := mockGrpcUser{ID: "Alice"}
-	ctx := context.WithValue(context.Background(), UserDetailKey, expected)
-
-	actual, ok := ContextUserDetail[mockGrpcUser](ctx)
-	assert.True(t, ok)
-	assert.Equal(t, expected, actual)
-}
-
-func TestGetGrpcUserDetail_NotFound(t *testing.T) {
+func TestContextHelpers_NotFound(t *testing.T) {
 	ctx := context.Background()
 
-	actual, ok := ContextUserDetail[mockGrpcUser](ctx)
+	tt, ok := ContextAuthTokenType(ctx)
 	assert.False(t, ok)
-	assert.Equal(t, mockGrpcUser{}, actual)
-}
+	assert.Equal(t, UnknownToken, tt)
 
-func TestGetGrpcUserDetail_WrongType(t *testing.T) {
-	ctx := context.WithValue(context.Background(), UserDetailKey, "not a user")
-
-	actual, ok := ContextUserDetail[mockGrpcUser](ctx)
+	token, ok := ContextAuthToken(ctx)
 	assert.False(t, ok)
-	assert.Equal(t, mockGrpcUser{}, actual)
+	assert.Equal(t, "", token)
+
+	p, ok := ContextPrincipal[mockPrincipal](ctx)
+	assert.False(t, ok)
+	assert.Equal(t, mockPrincipal{}, p)
 }
 
-func TestGetGrpcAccessToken_Found(t *testing.T) {
-	expected := "some-token"
-	ctx := context.WithValue(context.Background(), AccessTokenKey, expected)
-
-	actual, ok := ContextAccessToken(ctx)
-	assert.True(t, ok)
-	assert.Equal(t, expected, actual)
-}
-
-func TestGetGrpcAccessToken_NotFound(t *testing.T) {
+func TestContextHelpers_WrongType(t *testing.T) {
 	ctx := context.Background()
+	ctx = context.WithValue(ctx, authTokenTypeKey, "bearer") // wrong type (string, not AuthTokenType)
+	ctx = context.WithValue(ctx, authTokenKey, 123)          // wrong type (int, not string)
+	ctx = context.WithValue(ctx, principalKey, "oops")       // wrong type
 
-	actual, ok := ContextAccessToken(ctx)
+	tt, ok := ContextAuthTokenType(ctx)
 	assert.False(t, ok)
-	assert.Equal(t, "", actual)
+	assert.Equal(t, UnknownToken, tt)
+
+	token, ok := ContextAuthToken(ctx)
+	assert.False(t, ok)
+	assert.Equal(t, "", token)
+
+	p, ok := ContextPrincipal[mockPrincipal](ctx)
+	assert.False(t, ok)
+	assert.Equal(t, mockPrincipal{}, p)
 }

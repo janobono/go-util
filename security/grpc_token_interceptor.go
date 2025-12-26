@@ -2,7 +2,6 @@ package security
 
 import (
 	"context"
-	"strings"
 
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -10,35 +9,29 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-type GrpcAuthTokenType string
-
-const (
-	GrpcBasicAuthTokenType GrpcAuthTokenType = "basic"
-	GrpcBearerTokenType    GrpcAuthTokenType = "bearer"
-)
-
-type UserDetailDecoder[T any] interface {
-	DecodeGrpcUserDetail(ctx context.Context, tokenType GrpcAuthTokenType, token string) (T, error)
-	GetGrpcUserAuthorities(ctx context.Context, userDetail T) ([]string, error)
+type GrpcTokenInterceptorService[T any] interface {
+	AuthenticationNotRequired(fullMethod string) bool
+	AuthorizationNotRequired(fullMethod string) bool
+	IsAuthorized(fullMethod string, principal T) bool
+	PrincipalService[T]
 }
 
 type GrpcTokenInterceptor[T any] struct {
-	userDetailDecoder UserDetailDecoder[T]
+	grpcTokenInterceptorService GrpcTokenInterceptorService[T]
 }
 
-func NewGrpcTokenInterceptor[T any](userDetailDecoder UserDetailDecoder[T]) *GrpcTokenInterceptor[T] {
-	return &GrpcTokenInterceptor[T]{userDetailDecoder: userDetailDecoder}
+func NewGrpcTokenInterceptor[T any](grpcTokenInterceptorService GrpcTokenInterceptorService[T]) *GrpcTokenInterceptor[T] {
+	return &GrpcTokenInterceptor[T]{grpcTokenInterceptorService}
 }
 
-func (g *GrpcTokenInterceptor[T]) InterceptToken(methods []GrpcSecuredMethod) grpc.UnaryServerInterceptor {
+func (g *GrpcTokenInterceptor[T]) InterceptAuthToken() grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (any, error) {
-		securedMethod := FindGrpcSecuredMethod(methods, info.FullMethod)
-		if securedMethod == nil {
+		if g.grpcTokenInterceptorService.AuthenticationNotRequired(info.FullMethod) {
 			return handler(ctx, req)
 		}
 
@@ -48,22 +41,13 @@ func (g *GrpcTokenInterceptor[T]) InterceptToken(methods []GrpcSecuredMethod) gr
 		}
 
 		authHeader := md.Get("authorization")
-		if len(authHeader) == 0 {
-			return nil, status.Error(codes.Unauthenticated, "missing authorization")
+		if len(authHeader) != 1 {
+			return nil, status.Error(codes.Unauthenticated, "invalid authorization")
 		}
-
 		raw := authHeader[0]
-		var tokenType GrpcAuthTokenType
-		var token string
 
-		switch {
-		case strings.HasPrefix(raw, BasicPrefix):
-			tokenType = GrpcBasicAuthTokenType
-			token = strings.TrimSpace(raw[len(BasicPrefix):])
-		case strings.HasPrefix(raw, BearerPrefix):
-			tokenType = GrpcBearerTokenType
-			token = strings.TrimSpace(raw[len(BearerPrefix):])
-		default:
+		tokenType, token, err := parseToken(raw)
+		if err != nil {
 			return nil, status.Error(codes.Unauthenticated, "invalid authorization scheme")
 		}
 
@@ -71,22 +55,22 @@ func (g *GrpcTokenInterceptor[T]) InterceptToken(methods []GrpcSecuredMethod) gr
 			return nil, status.Error(codes.Unauthenticated, "empty token")
 		}
 
-		userDetail, err := g.userDetailDecoder.DecodeGrpcUserDetail(ctx, tokenType, token)
+		principal, err := g.grpcTokenInterceptorService.GetPrincipal(tokenType, token)
 		if err != nil {
 			return nil, status.Error(codes.Unauthenticated, "invalid token")
 		}
 
-		userAuthorities, err := g.userDetailDecoder.GetGrpcUserAuthorities(ctx, userDetail)
-		if err != nil {
-			return nil, status.Error(codes.Internal, "failed to load authorities")
+		ctx = context.WithValue(ctx, authTokenTypeKey, tokenType)
+		ctx = context.WithValue(ctx, authTokenKey, token)
+		ctx = context.WithValue(ctx, principalKey, principal)
+
+		if g.grpcTokenInterceptorService.AuthorizationNotRequired(info.FullMethod) {
+			return handler(ctx, req)
 		}
 
-		if len(securedMethod.Authorities) > 0 && !HasAnyAuthority(securedMethod.Authorities, userAuthorities) {
+		if !g.grpcTokenInterceptorService.IsAuthorized(info.FullMethod, principal) {
 			return nil, status.Error(codes.PermissionDenied, "insufficient permissions")
 		}
-
-		ctx = context.WithValue(ctx, AccessTokenKey, token)
-		ctx = context.WithValue(ctx, UserDetailKey, userDetail)
 
 		return handler(ctx, req)
 	}
