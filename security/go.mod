@@ -1,4 +1,4 @@
-module github.com/janobono/go-util/security
+module github.com/janobono/go-util/security/v2
 
 go 1.25.5
 
