@@ -23,7 +23,7 @@ func (ha *HttpRestTokenAuthenticationMiddleware[T]) RequireAuthentication(next h
 			return
 		}
 
-		principal, err := ha.principalService.GetPrincipal(tokenType, token)
+		principal, err := ha.principalService.GetPrincipal(r.Context(), tokenType, token)
 		if err != nil {
 			http.Error(w, http.StatusText(http.StatusUnauthorized), http.StatusUnauthorized)
 			return

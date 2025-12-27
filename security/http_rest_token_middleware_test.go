@@ -19,7 +19,7 @@ type mockPrincipalService struct {
 	GetPrincipalFunc func(tokenType AuthTokenType, token string) (httpPrincipal, error)
 }
 
-func (m mockPrincipalService) GetPrincipal(tokenType AuthTokenType, token string) (httpPrincipal, error) {
+func (m mockPrincipalService) GetPrincipal(ctx context.Context, tokenType AuthTokenType, token string) (httpPrincipal, error) {
 	if m.GetPrincipalFunc == nil {
 		return httpPrincipal{}, nil
 	}
@@ -27,15 +27,15 @@ func (m mockPrincipalService) GetPrincipal(tokenType AuthTokenType, token string
 }
 
 type mockHttpAuthzService struct {
-	GetPrincipalFunc func(tokenType AuthTokenType, token string) (httpPrincipal, error)
+	GetPrincipalFunc func(ctx context.Context, tokenType AuthTokenType, token string) (httpPrincipal, error)
 	IsAuthorizedFunc func(principal httpPrincipal) bool
 }
 
-func (m mockHttpAuthzService) GetPrincipal(tokenType AuthTokenType, token string) (httpPrincipal, error) {
+func (m mockHttpAuthzService) GetPrincipal(ctx context.Context, tokenType AuthTokenType, token string) (httpPrincipal, error) {
 	if m.GetPrincipalFunc == nil {
 		return httpPrincipal{}, nil
 	}
-	return m.GetPrincipalFunc(tokenType, token)
+	return m.GetPrincipalFunc(ctx, tokenType, token)
 }
 
 func (m mockHttpAuthzService) IsAuthorized(principal httpPrincipal) bool {

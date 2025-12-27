@@ -55,7 +55,7 @@ func (g *GrpcTokenInterceptor[T]) InterceptAuthToken() grpc.UnaryServerIntercept
 			return nil, status.Error(codes.Unauthenticated, "empty token")
 		}
 
-		principal, err := g.grpcTokenInterceptorService.GetPrincipal(tokenType, token)
+		principal, err := g.grpcTokenInterceptorService.GetPrincipal(ctx, tokenType, token)
 		if err != nil {
 			return nil, status.Error(codes.Unauthenticated, "invalid token")
 		}

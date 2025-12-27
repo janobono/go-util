@@ -46,7 +46,7 @@ func (m mockGrpcTokenInterceptorService) IsAuthorized(fullMethod string, princip
 	return m.IsAuthorizedFunc(fullMethod, principal)
 }
 
-func (m mockGrpcTokenInterceptorService) GetPrincipal(tokenType AuthTokenType, token string) (mockPrincipal, error) {
+func (m mockGrpcTokenInterceptorService) GetPrincipal(ctx context.Context, tokenType AuthTokenType, token string) (mockPrincipal, error) {
 	if m.GetPrincipalFunc == nil {
 		return mockPrincipal{}, nil
 	}

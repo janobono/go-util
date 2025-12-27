@@ -7,7 +7,7 @@ import (
 )
 
 type PrincipalService[T any] interface {
-	GetPrincipal(tokenType AuthTokenType, token string) (T, error)
+	GetPrincipal(ctx context.Context, tokenType AuthTokenType, token string) (T, error)
 }
 
 type AuthTokenType string
