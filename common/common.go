@@ -48,7 +48,8 @@ func Deduplicate(values []string) []string {
 	return result
 }
 
+var EmailRegExp = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
+
 func IsValidEmail(email string) bool {
-	re := regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
-	return re.MatchString(email)
+	return EmailRegExp.MatchString(email)
 }
