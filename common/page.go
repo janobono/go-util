@@ -70,7 +70,7 @@ func NewPage[T any](pageable *Pageable, totalElements int64, content []T) *Page[
 		TotalElements: totalElements,
 		TotalPages:    totalPages,
 		First:         pageable.Page == 0,
-		Last:          pageable.Page == totalPages-1,
+		Last:          pageable.Page == totalPages-1 || totalPages == 0,
 		Content:       content,
 		Empty:         len(content) == 0,
 	}
