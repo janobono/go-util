@@ -18,12 +18,12 @@ const (
 	BearerToken  AuthTokenType = "bearer"
 )
 
-type ctxKey struct{ name string }
+type CtxKey struct{ name string }
 
 var (
-	authTokenTypeKey = ctxKey{"authTokenType"}
-	authTokenKey     = ctxKey{"authToken"}
-	principalKey     = ctxKey{"principal"}
+	AuthTokenTypeKey = CtxKey{"authTokenType"}
+	AuthTokenKey     = CtxKey{"authToken"}
+	PrincipalKey     = CtxKey{"principal"}
 )
 
 func ParseToken(raw string) (AuthTokenType, string, error) {
@@ -44,7 +44,7 @@ func ParseToken(raw string) (AuthTokenType, string, error) {
 }
 
 func ContextAuthTokenType(ctx context.Context) (AuthTokenType, bool) {
-	value := ctx.Value(authTokenTypeKey)
+	value := ctx.Value(AuthTokenTypeKey)
 	if value == nil {
 		return UnknownToken, false
 	}
@@ -53,7 +53,7 @@ func ContextAuthTokenType(ctx context.Context) (AuthTokenType, bool) {
 }
 
 func ContextAuthToken(ctx context.Context) (string, bool) {
-	value := ctx.Value(authTokenKey)
+	value := ctx.Value(AuthTokenKey)
 	if value == nil {
 		return "", false
 	}
@@ -62,7 +62,7 @@ func ContextAuthToken(ctx context.Context) (string, bool) {
 }
 
 func ContextPrincipal[T any](ctx context.Context) (T, bool) {
-	value := ctx.Value(principalKey)
+	value := ctx.Value(PrincipalKey)
 	if value == nil {
 		var zero T
 		return zero, false

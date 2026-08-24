@@ -108,14 +108,14 @@ func TestContextAuthTokenType(t *testing.T) {
 	})
 
 	t.Run("found", func(t *testing.T) {
-		ctx := context.WithValue(context.Background(), authTokenTypeKey, BearerToken)
+		ctx := context.WithValue(context.Background(), AuthTokenTypeKey, BearerToken)
 		got, ok := ContextAuthTokenType(ctx)
 		assert.True(t, ok)
 		assert.Equal(t, BearerToken, got)
 	})
 
 	t.Run("wrong type", func(t *testing.T) {
-		ctx := context.WithValue(context.Background(), authTokenTypeKey, "bearer") // string, not AuthTokenType
+		ctx := context.WithValue(context.Background(), AuthTokenTypeKey, "bearer") // string, not AuthTokenType
 		got, ok := ContextAuthTokenType(ctx)
 		assert.False(t, ok)
 		assert.Equal(t, UnknownToken, got)
@@ -130,14 +130,14 @@ func TestContextAuthToken(t *testing.T) {
 	})
 
 	t.Run("found", func(t *testing.T) {
-		ctx := context.WithValue(context.Background(), authTokenKey, "token123")
+		ctx := context.WithValue(context.Background(), AuthTokenKey, "token123")
 		got, ok := ContextAuthToken(ctx)
 		assert.True(t, ok)
 		assert.Equal(t, "token123", got)
 	})
 
 	t.Run("wrong type", func(t *testing.T) {
-		ctx := context.WithValue(context.Background(), authTokenKey, 123)
+		ctx := context.WithValue(context.Background(), AuthTokenKey, 123)
 		got, ok := ContextAuthToken(ctx)
 		assert.False(t, ok)
 		assert.Equal(t, "", got)
@@ -153,14 +153,14 @@ func TestContextPrincipal(t *testing.T) {
 
 	t.Run("found", func(t *testing.T) {
 		want := testPrincipal{ID: "p1"}
-		ctx := context.WithValue(context.Background(), principalKey, want)
+		ctx := context.WithValue(context.Background(), PrincipalKey, want)
 		got, ok := ContextPrincipal[testPrincipal](ctx)
 		assert.True(t, ok)
 		assert.Equal(t, want, got)
 	})
 
 	t.Run("wrong type", func(t *testing.T) {
-		ctx := context.WithValue(context.Background(), principalKey, "oops")
+		ctx := context.WithValue(context.Background(), PrincipalKey, "oops")
 		got, ok := ContextPrincipal[testPrincipal](ctx)
 		assert.False(t, ok)
 		assert.Equal(t, testPrincipal{}, got)
