@@ -26,7 +26,7 @@ var (
 	principalKey     = ctxKey{"principal"}
 )
 
-func parseToken(raw string) (AuthTokenType, string, error) {
+func ParseToken(raw string) (AuthTokenType, string, error) {
 	parts := strings.SplitN(strings.TrimSpace(raw), " ", 2)
 	if len(parts) != 2 {
 		return UnknownToken, "", errors.New("invalid authorization scheme")

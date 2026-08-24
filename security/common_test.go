@@ -84,7 +84,7 @@ func TestParseToken(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotType, gotToken, err := parseToken(tt.raw)
+			gotType, gotToken, err := ParseToken(tt.raw)
 
 			if tt.wantErr {
 				assert.Error(t, err)
